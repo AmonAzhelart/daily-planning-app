@@ -1,11 +1,26 @@
 import React from 'react';
 import { Box, Button, Typography, Paper, Container } from '@mui/material';
+import { useDailyPlanningApi } from '../customHook/api';
+
+
+
 
 const LoginPage: React.FC = () => {
+  const api = useDailyPlanningApi();
   const handleLoginRedirect = () => {
-    // Reindirizza l'utente all'endpoint di "ponte" del backend.
-    // Il backend gestirà la sessione e reindirizzerà di nuovo al frontend.
-    window.location.href = 'http://127.0.0.1:8080/login?sid=test-session-id';
+
+    const fetchUrl = async () => {
+      try {
+        const response = await api.getUrlMainApp();
+        window.location.href = response.value; // Reindirizza l'utente all'URL principale dell'app
+
+        console.log("URL principale dell'app:", response);
+      } catch (error) {
+        console.error("Errore nel recupero dell'URL principale:", error);
+      }
+    };
+
+    fetchUrl();
   };
 
   return (

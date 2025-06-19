@@ -9,6 +9,7 @@ import {
     DialogTitle, DialogContent, useMediaQuery, Avatar, Switch, FormControlLabel, Popover,
     DialogActions,
     LinearProgress,
+    Alert,
 } from '@mui/material';
 import {
     Add as AddIcon, Save as SaveIcon, LockOpen as LockOpenIcon, Lock as LockIcon,
@@ -25,7 +26,8 @@ import {
     LabelImportantOutlined as LabelImportantOutlinedIcon, ScheduleSendOutlined as ScheduleSendOutlinedIcon,
     ListAltOutlined as ListAltOutlinedIcon, CommentOutlined as CommentOutlinedIcon,
     BadgeOutlined as BadgeOutlinedIcon, FiberManualRecord as FiberManualRecordIcon,
-    CloudQueue as CloudQueueIcon, Close as CloseIcon, PictureAsPdf as PictureAsPdfIcon
+    CloudQueue as CloudQueueIcon, Close as CloseIcon, PictureAsPdf as PictureAsPdfIcon,
+    SyncLock as SyncLockIcon
 } from '@mui/icons-material';
 import { keyframes } from '@mui/system';
 import { useSelector } from 'react-redux';
@@ -42,7 +44,7 @@ import { useAuth } from '../../context/AuthContenxt';
 import { DownloadIcon } from 'lucide-react';
 
 
-// --- Interfaccia delle Props AGGIORNATA ---
+// --- Interfaccia delle Props ---
 interface DailyPlanningFormProps {
     planningId: number | null;
     targetDate: string | null;
@@ -50,9 +52,10 @@ interface DailyPlanningFormProps {
     title: string;
 }
 
-// --- NEW: Interfaccia per il ref esposto ---
+// --- Interfaccia per il ref esposto ---
 export interface DailyPlanningFormRef {
     triggerSaveDraft: () => Promise<void>;
+    handleCloseRequest: () => void;
 }
 
 
@@ -161,6 +164,7 @@ const ListboxComponent = React.forwardRef<
 
 
 // --- Componente CollapsibleTableRow ---
+// (Componente non modificato, resta identico)
 interface CollapsibleTableRowProps {
     rowData: DailyPlanningDetailRow;
     onRowChange: (updatedRow: DailyPlanningDetailRow) => void;
@@ -192,7 +196,7 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
         } else {
             mounted.current = true;
         }
-    }, [debouncedRowData, onRowChange, initialRowData]);
+    }, [debouncedRowData, initialRowData]);
 
 
     useEffect(() => {
@@ -712,13 +716,11 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
 
 
 // --- Componente DailyPlanningForm ---
-// NEW: Modificato per usare forwardRef
 const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProps>(({ planningId, targetDate, onClose, title }, ref) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'lg'));
-    const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
-
+    
     const { user } = useAuth();
     const userInfo = user ;
     const currentUserRole = user?.role?.name ?? '';
@@ -727,6 +729,9 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [pageError, setPageError] = useState<string | null>(null);
+    
+    // NEW: State for Zoho re-authentication flow
+    const [zohoAuthUrl, setZohoAuthUrl] = useState<string | null>(null);
 
     const [dpRows, setDpRows] = useState<DailyPlanningDetailRow[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
@@ -746,6 +751,8 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     const [infoDialogOpen, setInfoDialogOpen] = useState(false);
     const [infoDialogContent, setInfoDialogContent] = useState({ title: '', message: '' });
     
+    const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+
     
     useEffect(() => {
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -754,9 +761,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 event.returnValue = '';
             }
         };
-
         window.addEventListener('beforeunload', handleBeforeUnload);
-
         return () => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
         };
@@ -775,109 +780,60 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     const risorsaPopoverOpen = Boolean(risorsaPopoverAnchorEl);
     const risorsaPopoverId = risorsaPopoverOpen ? 'risorsa-info-popover' : undefined;
 
-    useEffect(() => {
-        const fetchInitialData = async () => {
-            setIsLoadingInitialData(true);
-            setPageError(null);
-            setIsDirty(false);
-            
-            let currentDpTesta: DPTesta | null = null;
-            
-            if (planningId) {
-                try {
-                    currentDpTesta = await api.getDPTesta(Number(planningId));
-                    setDpTesta(currentDpTesta);
-                } catch (err) {
-                    setPageError(`Planning con ID ${planningId} non trovato.`);
-                    setIsLoadingInitialData(false);
-                    return;
-                }
-            }
-            
-            const dateForProcessing = currentDpTesta?.giorno || targetDate;
-            if (!dateForProcessing) {
+    // NEW: Refactored data loading into a useCallback to be able to call it again.
+    const loadPlanningData = useCallback(async () => {
+        setIsLoadingInitialData(true);
+        setPageError(null);
+        setZohoAuthUrl(null);
+        setIsDirty(false);
+        
+        let currentDpTesta: DPTesta | null = null;
+        
+        if (planningId) {
+            try {
+                currentDpTesta = await api.getDPTesta(Number(planningId));
+                setDpTesta(currentDpTesta);
+            } catch (err) {
+                setPageError(`Planning con ID ${planningId} non trovato.`);
                 setIsLoadingInitialData(false);
                 return;
             }
+        }
+        
+        const dateForProcessing = currentDpTesta?.giorno || targetDate;
+        if (!dateForProcessing) {
+            setIsLoadingInitialData(false);
+            return;
+        }
 
-            try {
-                const [clientsData, interventionTypesData, resourcesData] = await Promise.all([
-                    api.getClients(),
-                    api.getInterventionTypes(),
-                    api.getResources(),
-                ]);
+        try {
+            const [clientsData, interventionTypesData, resourcesData] = await Promise.all([
+                api.getClients(),
+                api.getInterventionTypes(),
+                api.getResources(),
+            ]);
 
-                const mappedClients: Client[] = clientsData.map(c => ({ id: c.id_sede, ragioneSociale: c.cliente, nomeBreve: c.sede === '(la stessa)' ? c.cliente : c.sede }));
-                const mappedInterventionTypes: InterventionType[] = interventionTypesData.map(it => ({ id: it.id, name: it.descrizione || 'N/A' }));
-                const mappedRisorse: Risorsa[] = resourcesData.map(r => ({ id: r.username, nome: `${r.first_name || ''} ${r.last_name || ''}`.trim(), sigla: deriveSigla(r.first_name, r.last_name) }));
-                setClients(mappedClients);
-                setInterventionTypes(mappedInterventionTypes);
-                setRisorse(mappedRisorse);
+            const mappedClients: Client[] = clientsData.map(c => ({ id: c.id_sede, ragioneSociale: c.cliente, nomeBreve: c.sede === '(la stessa)' ? c.cliente : c.sede }));
+            const mappedInterventionTypes: InterventionType[] = interventionTypesData.map(it => ({ id: it.id, name: it.descrizione || 'N/A' }));
+            const mappedRisorse: Risorsa[] = resourcesData.map(r => ({ id: r.username, nome: `${r.first_name || ''} ${r.last_name || ''}`.trim(), sigla: deriveSigla(r.first_name, r.last_name) }));
+            setClients(mappedClients);
+            setInterventionTypes(mappedInterventionTypes);
+            setRisorse(mappedRisorse);
 
-                const shouldSyncWithZoho = !currentDpTesta || currentDpTesta.stato === 'NUOVO';
+            const shouldSyncWithZoho = !currentDpTesta || currentDpTesta.stato === 'NUOVO';
+            
+            if (shouldSyncWithZoho) {
+                const zohoEventsFromApi = await api.get_zoho_events(dateForProcessing);
+                const zohoEventsMap = new Map<string, any>(zohoEventsFromApi.map(event => [event.caluid, event]));
                 
-                if (shouldSyncWithZoho) {
-                    const zohoEventsFromApi = await api.get_zoho_events(dateForProcessing);
-                    const zohoEventsMap = new Map<string, any>(zohoEventsFromApi.map(event => [event.caluid, event]));
-                    
-                    let processedRows: DailyPlanningDetailRow[] = [];
-                    let wasModified = false;
-                    
-                    if (currentDpTesta) {
-                        const currentDpDetails = await api.getDPDetailsByTesta(Number(planningId));
-                        const deletionPromises: Promise<any>[] = [];
-
-                        processedRows = (await Promise.all(currentDpDetails.map(async (detail) => {
-                            const client = detail.id_sede == null ? null : mappedClients.find(c => c.id === detail.id_sede) ?? null;
-                            const risorsa = mappedRisorse.find(r => r.id === detail.id_agpspm) || null;
-                            const detailInterventions = await api.getDPDetailTIsByDetail(detail.id);
-                            const mappedInterventions: SelectedIntervention[] = detailInterventions.map(dti => {
-                                const type = mappedInterventionTypes.find(it => it.id === dti.id_tipi_interventi);
-                                return { id: dti.id, interventionTypeId: dti.id_tipi_interventi, interventionTypeName: type ? type.name : 'Sconosciuto', quantity: dti.qta };
-                            });
-
-                            const rowBase = {
-                                id: detail.id, isNew: false, selectedClient: client, risorsaAssegnata: risorsa,
-                                selectedInterventions: mappedInterventions, notes: detail.note || '',
-                                timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
-                            };
-                            
-                            if (!detail.caluid) {
-                                return { ...rowBase, zohoEventId: null, zohoOriginalTitle: '', descrizionemanuale: detail.descrizionemanuale || '' };
-                            }
-
-                            const matchingZohoEvent = zohoEventsMap.get(detail.caluid);
-                            if (matchingZohoEvent) {
-                                zohoEventsMap.delete(detail.caluid);
-                                const originalTitle = matchingZohoEvent.title || matchingZohoEvent.description || 'Attività Zoho';
-                                return { ...rowBase, zohoEventId: detail.caluid, zohoOriginalTitle: originalTitle, descrizionemanuale: detail.descrizionemanuale || originalTitle };
-                            } else {
-                                wasModified = true;
-                                deletionPromises.push(api.deleteDPDetail(detail.id));
-                                return null;
-                            }
-                        }))).filter(Boolean) as DailyPlanningDetailRow[];
-
-                        if(deletionPromises.length > 0) await Promise.all(deletionPromises);
-                    }
-
-                    const newZohoRows: DailyPlanningDetailRow[] = Array.from(zohoEventsMap.values()).map(zohoEvent => {
-                        const originalTitle = zohoEvent.title || zohoEvent.description || 'Nuova Attività Zoho';
-                        return {
-                            id: uuidv4(), isNew: true, zohoEventId: zohoEvent.caluid,
-                            zohoOriginalTitle: originalTitle, descrizionemanuale: originalTitle,
-                            selectedClient: null, risorsaAssegnata: null, selectedInterventions: [],
-                            notes: zohoEvent.note || '', timeSlot: zohoEvent.fasciaoraria || '',
-                            materialAvailable: zohoEvent.materialedisponibile === 'SI',
-                        };
-                    });
-                    
-                    setDpRows([...processedRows, ...newZohoRows]);
-                    if (newZohoRows.length > 0 || wasModified) setIsDirty(true);
-
-                } else {
+                let processedRows: DailyPlanningDetailRow[] = [];
+                let wasModified = false;
+                
+                if (currentDpTesta) {
                     const currentDpDetails = await api.getDPDetailsByTesta(Number(planningId));
-                    const dbRows = await Promise.all(currentDpDetails.map(async (detail) => {
+                    const deletionPromises: Promise<any>[] = [];
+
+                    processedRows = (await Promise.all(currentDpDetails.map(async (detail) => {
                         const client = detail.id_sede == null ? null : mappedClients.find(c => c.id === detail.id_sede) ?? null;
                         const risorsa = mappedRisorse.find(r => r.id === detail.id_agpspm) || null;
                         const detailInterventions = await api.getDPDetailTIsByDetail(detail.id);
@@ -885,44 +841,109 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                             const type = mappedInterventionTypes.find(it => it.id === dti.id_tipi_interventi);
                             return { id: dti.id, interventionTypeId: dti.id_tipi_interventi, interventionTypeName: type ? type.name : 'Sconosciuto', quantity: dti.qta };
                         });
-                        const originalTitle = detail.descrizionemanuale || `Attività ID: ${detail.id}`;
-                        
-                        return {
-                            id: detail.id, isNew: false, zohoEventId: detail.caluid,
-                            zohoOriginalTitle: originalTitle,
-                            descrizionemanuale: detail.descrizionemanuale || originalTitle,
-                            selectedClient: client, risorsaAssegnata: risorsa,
+
+                        const rowBase = {
+                            id: detail.id, isNew: false, selectedClient: client, risorsaAssegnata: risorsa,
                             selectedInterventions: mappedInterventions, notes: detail.note || '',
                             timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
                         };
-                    }));
-                    setDpRows(dbRows);
+                        
+                        if (!detail.caluid) {
+                            return { ...rowBase, zohoEventId: null, zohoOriginalTitle: '', descrizionemanuale: detail.descrizionemanuale || '' };
+                        }
+
+                        const matchingZohoEvent = zohoEventsMap.get(detail.caluid);
+                        if (matchingZohoEvent) {
+                            zohoEventsMap.delete(detail.caluid);
+                            const originalTitle = matchingZohoEvent.title || matchingZohoEvent.description || 'Attività Zoho';
+                            return { ...rowBase, zohoEventId: detail.caluid, zohoOriginalTitle: originalTitle, descrizionemanuale: detail.descrizionemanuale || originalTitle };
+                        } else {
+                            wasModified = true;
+                            deletionPromises.push(api.deleteDPDetail(detail.id));
+                            return null;
+                        }
+                    }))).filter(Boolean) as DailyPlanningDetailRow[];
+
+                    if(deletionPromises.length > 0) await Promise.all(deletionPromises);
                 }
+
+                const newZohoRows: DailyPlanningDetailRow[] = Array.from(zohoEventsMap.values()).map(zohoEvent => {
+                    const originalTitle = zohoEvent.title || zohoEvent.description || 'Nuova Attività Zoho';
+                    return {
+                        id: uuidv4(), isNew: true, zohoEventId: zohoEvent.caluid,
+                        zohoOriginalTitle: originalTitle, descrizionemanuale: originalTitle,
+                        selectedClient: null, risorsaAssegnata: null, selectedInterventions: [],
+                        notes: zohoEvent.note || '', timeSlot: zohoEvent.fasciaoraria || '',
+                        materialAvailable: zohoEvent.materialedisponibile === 'SI',
+                    };
+                });
                 
-                if (currentDpTesta) {
-                    const { stato } = currentDpTesta;
-                    let readOnly = false;
-                    if (stato === 'CHIUSO' || stato === 'MODIFICATO') readOnly = true;
-                    else if (currentUserRole === 'MAGAZZINIERE' && stato === 'APERTO') readOnly = true;
-                    else if (currentUserRole === 'SPECIALIST' && stato === 'NUOVO') readOnly = true;
-                    setIsReadOnly(readOnly);
-                } else { 
-                    setIsReadOnly(currentUserRole === 'SPECIALIST');
-                }
+                setDpRows([...processedRows, ...newZohoRows]);
+                if (newZohoRows.length > 0 || wasModified) setIsDirty(true);
 
-            } catch (err: any) {
-                console.error("Errore caricamento dati:", err);
-                const errorMessage = err.response?.status === 401
-                    ? "Sessione Zoho scaduta. Ricarica la pagina per riautorizzare."
-                    : `Errore caricamento: ${err.message || 'Sconosciuto'}`;
-                setPageError(errorMessage);
-            } finally {
-                setIsLoadingInitialData(false);
+            } else {
+                const currentDpDetails = await api.getDPDetailsByTesta(Number(planningId));
+                const dbRows = await Promise.all(currentDpDetails.map(async (detail) => {
+                    const client = detail.id_sede == null ? null : mappedClients.find(c => c.id === detail.id_sede) ?? null;
+                    const risorsa = mappedRisorse.find(r => r.id === detail.id_agpspm) || null;
+                    const detailInterventions = await api.getDPDetailTIsByDetail(detail.id);
+                    const mappedInterventions: SelectedIntervention[] = detailInterventions.map(dti => {
+                        const type = mappedInterventionTypes.find(it => it.id === dti.id_tipi_interventi);
+                        return { id: dti.id, interventionTypeId: dti.id_tipi_interventi, interventionTypeName: type ? type.name : 'Sconosciuto', quantity: dti.qta };
+                    });
+                    const originalTitle = detail.descrizionemanuale || `Attività ID: ${detail.id}`;
+                    
+                    return {
+                        id: detail.id, isNew: false, zohoEventId: detail.caluid,
+                        zohoOriginalTitle: originalTitle,
+                        descrizionemanuale: detail.descrizionemanuale || originalTitle,
+                        selectedClient: client, risorsaAssegnata: risorsa,
+                        selectedInterventions: mappedInterventions, notes: detail.note || '',
+                        timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
+                    };
+                }));
+                setDpRows(dbRows);
             }
-        };
+            
+            if (currentDpTesta) {
+                const { stato } = currentDpTesta;
+                let readOnly = false;
+                if (stato === 'CHIUSO' || stato === 'MODIFICATO') readOnly = true;
+                else if (currentUserRole === 'MAGAZZINIERE' && stato === 'APERTO') readOnly = true;
+                else if (currentUserRole === 'SPECIALIST' && stato === 'NUOVO') readOnly = true;
+                setIsReadOnly(readOnly);
+            } else { 
+                setIsReadOnly(currentUserRole === 'SPECIALIST');
+            }
 
-        fetchInitialData();
-    }, [planningId, targetDate, currentUserRole]);
+        } catch (err: any) {
+            console.log("Errore caricamento dati:", err.message);
+            // NEW: Handle 401 Unauthorized for Zoho
+            if (err.message ==  "Unauthorized") {
+                console.warn("Sessione Zoho scaduta o non autenticata.");
+                setPageError("La sessione di Zoho Calendar è scaduta. È necessaria una nuova autenticazione.");
+                try {
+                    const authResponse = await api.zoho_oauth_initiate();
+                    if (authResponse && authResponse.auth_url) {
+                        setZohoAuthUrl(authResponse.auth_url);
+                    } else {
+                         setPageError("Impossibile ottenere l'URL di autenticazione da Zoho. Contattare l'assistenza.");
+                    }
+                } catch (authError) {
+                    console.error("Errore durante l'avvio dell'autenticazione Zoho:", authError);
+                    setPageError("Si è verificato un errore critico durante il tentativo di ri-autenticazione con Zoho.");
+                }
+            } else {
+                setPageError(`Errore caricamento: ${err.message || 'Sconosciuto'}`);
+            }
+        } finally {
+            setIsLoadingInitialData(false);
+        }
+    }, [planningId, targetDate, currentUserRole, api]);
+
+    useEffect(() => {
+        loadPlanningData();
+    }, []);
 
 
     const handleRowChange = useCallback((updatedRow: DailyPlanningDetailRow) => {
@@ -972,8 +993,8 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         }
     }, [api, dpRows, isReadOnly]);
 
-   const handleSaveAll = useCallback(async (isClosingAction: boolean) => {
-        if (isReadOnly) return;
+   const handleSaveAll = useCallback(async (isClosingAction: boolean): Promise<boolean> => {
+        if (isReadOnly) return false;
         
         setIsSaving(true);
         setPageError(null);
@@ -1001,8 +1022,8 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             }
     
             let nextState = testaToProcess.stato;
-            let nextRevision = testaToProcess.revisione ? testaToProcess.revisione>1 ? testaToProcess.revisione-1 : 0 : 0;
-            let modified = testaToProcess.revisione ? testaToProcess.revisione >0 : false;
+            let nextRevision = testaToProcess.revisione ? testaToProcess.revisione > 1 ? testaToProcess.revisione - 1 : 0 : 0;
+            let modified = testaToProcess.revisione ? testaToProcess.revisione > 0 : false;
             let infoMessage = "Planning salvato con successo!";
     
             if (isClosingAction) {
@@ -1078,16 +1099,18 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     
             setInfoDialogContent({ title: "Operazione completata", message: infoMessage });
             setInfoDialogOpen(true);
+
+            return true;
     
         } catch (err: any) {
             console.error("Errore durante il salvataggio:", err);
             setPageError(`Errore salvataggio: ${err.message || 'Errore sconosciuto'}`);
+            return false;
         } finally {
             setIsSaving(false);
         }
     }, [dpTesta, dpRows, api, currentUserRole, targetDate, userInfo, isReadOnly, clients, risorse, interventionTypes]);
     
-    // NEW: Funzione per salvare la bozza silenziosamente
     const handleSaveDraft = useCallback(async () => {
         if (!isDirty || isReadOnly || isSaving) {
             return;
@@ -1117,7 +1140,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             }
             
             const updatePayload: DPTestaUpdate = {
-                stato: testaToProcess.stato, // NON cambia lo stato
+                stato: testaToProcess.stato,
                 modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}`,
                 details: dpRows.map(row => ({
                     id: typeof row.id === 'string' ? undefined : Number(row.id),
@@ -1161,16 +1184,36 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
 
         } catch (err: any) {
             console.error("Errore durante il salvataggio della bozza:", err);
-            // Non mostrare errore all'utente per un salvataggio in background
         } finally {
             setIsSaving(false);
         }
     }, [isDirty, isReadOnly, isSaving, dpTesta, dpRows, api, userInfo, targetDate, clients, risorse, interventionTypes]);
 
-    // NEW: Espone la funzione `handleSaveDraft` al componente genitore tramite ref.
+    const handleCloseRequest = useCallback(() => {
+        if (isDirty && !isReadOnly) {
+            setConfirmCloseOpen(true);
+        } else {
+            onClose();
+        }
+    }, [isDirty, isReadOnly, onClose]);
+
     useImperativeHandle(ref, () => ({
         triggerSaveDraft: handleSaveDraft,
-    }), [handleSaveDraft]);
+        handleCloseRequest: handleCloseRequest,
+    }), [handleSaveDraft, handleCloseRequest]);
+
+    const handleSaveAndClose = async () => {
+        setConfirmCloseOpen(false);
+        const success = await handleSaveAll(false);
+        if (success) {
+            onClose();
+        }
+    };
+
+    const handleCloseWithoutSaving = () => {
+        setConfirmCloseOpen(false);
+        onClose();
+    };
 
     const handleReopenPlanning = useCallback(async () => {
         if (!dpTesta || currentUserRole !== 'SPECIALIST' || (dpTesta.stato !== 'CHIUSO' && dpTesta.stato !== 'MODIFICATO')) return;
@@ -1179,10 +1222,10 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         try {
             await api.updateDPTesta(dpTesta.id, { 
                 stato: 'APERTO', 
-                modifiedby: currentUserRole,
+                modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}`,
             });
 
-            setDpTesta(prev => prev ? { ...prev, stato: 'APERTO', modifiedby: currentUserRole } : null);
+            setDpTesta(prev => prev ? { ...prev, stato: 'APERTO', modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}` } : null);
             setIsReadOnly(false);
             setIsDirty(true);
 
@@ -1196,7 +1239,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             setIsSaving(false);
         }
 
-    }, [api, dpTesta, currentUserRole]);
+    }, [api, dpTesta, currentUserRole, userInfo]);
 
 
     const handleCardClick = (row: DailyPlanningDetailRow) => {
@@ -1225,6 +1268,25 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         setModalOpen(false);
         setCurrentRowInModal(null);
     };
+
+    // NEW: Handles the Zoho Login popup flow
+    const handleZohoLogin = () => {
+        if (!zohoAuthUrl) return;
+
+        const popup = window.open(zohoAuthUrl, 'ZohoAuthPopup', 'width=600,height=700,left=200,top=100');
+        
+        setIsLoadingInitialData(true);
+        setPageError(null);
+        setZohoAuthUrl(null);
+
+        const timer = setInterval(() => {
+            if (!popup || popup.closed) {
+                clearInterval(timer);
+                console.log("Popup di autenticazione chiuso, ricarico i dati...");
+                loadPlanningData();
+            }
+        }, 1000);
+    };
     
     const isCardRowComplete = (row: DailyPlanningDetailRow) => {
         if (currentUserRole === 'SPECIALIST') {
@@ -1245,19 +1307,45 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         return isCardRowComplete(row) ? theme.palette.success.main : theme.palette.warning.main;
     }
 
+    // NEW: Render state for Zoho authentication
+    if (zohoAuthUrl) {
+        return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p: 3, height: '100%' }}>
+                <Paper elevation={3} sx={{ p: {xs: 2, sm: 4}, textAlign: 'center', maxWidth: 480, m: 2, borderRadius: 2 }}>
+                    <SyncLockIcon color="error" sx={{ fontSize: 48, mb: 2 }} />
+                    <Typography variant="h6" component="h2" gutterBottom fontWeight="bold">
+                        Autenticazione Richiesta
+                    </Typography>
+                    <Typography sx={{ my: 2, color: 'text.secondary' }}>
+                        {pageError || "Per sincronizzare i dati, è necessario autenticarsi nuovamente con Zoho Calendar."}
+                    </Typography>
+                    <Button variant="contained" onClick={handleZohoLogin} startIcon={<LockOpenIcon />}>
+                        Effettua il login su Zoho
+                    </Button>
+                </Paper>
+            </Box>
+        );
+    }
+    
     if (isLoadingInitialData) {
         return <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p:3, height: '100%' }}><CircularProgress size={50} thickness={4} /><Typography variant="h6" sx={{ mt: 2.5, color: 'text.secondary' }}>Caricamento Dati...</Typography></Box>;
     }
-
     
+    if (pageError) {
+         return (
+            <Box sx={{ p: 3 }}>
+                <Alert severity="error" variant="filled">{pageError}</Alert>
+            </Box>
+        )
+    }
 
     const renderAppBar = () => (
         <AppBar position="sticky" sx={{ boxShadow: theme.shadows[1] }}>
             <Container maxWidth={false} disableGutters>
                 <Toolbar sx={{ py: 1, px: 1.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', gap: 1, flexWrap: 'wrap' }}>
-                        {isReadOnly && dpTesta?.stato !== 'APERTO' && (
-                            <Tooltip title="Questo planning è chiuso e non può essere modificato.">
+                        {isReadOnly && (
+                            <Tooltip title="Questo planning è bloccato e non può essere modificato.">
                                 <Chip
                                     icon={<LockIcon />}
                                     label="Bloccato"
@@ -1300,12 +1388,9 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                         )}
                         
                         {dpTesta?.giorno && (() => {
-                            // Compare only the date part (ignore time)
                             const today = new Date();
                             today.setHours(0, 0, 0, 0);
                             const target = new Date(dpTesta?.giorno);
-                            console.log("Target Date:", target);
-                            console.log("Today Date:", today);
                             target.setHours(0, 0, 0, 0);
                             return target.getTime() > today.getTime();
                         })() && isReadOnly && currentUserRole === 'SPECIALIST' && (dpTesta?.stato === 'CHIUSO' || dpTesta?.stato === 'MODIFICATO') && (
@@ -1329,13 +1414,17 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                             <Tooltip title={ currentUserRole === 'MAGAZZINIERE' ? "Salva le modifiche" : "Salva senza cambiare stato" }>
                                 <span><IconButton type="button" onClick={() => handleSaveAll(false)} color="inherit" size={isMobile ? "small" : "medium"} disabled={!isDirty || isSaving}><SaveIcon /></IconButton></span>
                             </Tooltip>
-                            <Tooltip title={ dpTesta?.stato === 'NUOVO' ? "Invia allo SPECIALIST" : "Chiudi e finalizza planning"}>
-                                <span><IconButton type="button" onClick={() => handleSaveAll(true)} color="inherit" size={isMobile ? "small" : "medium"} disabled={!isDirty || isSaving}><LockIcon /></IconButton></span>
-                            </Tooltip>
+                            
                             </>
                         )}
                         {
-                            currentUserRole === "SPECIALIST" && (
+                             !isReadOnly && (dpTesta?.stato != 'CHIUSO') && (
+                            <Tooltip title={ dpTesta?.stato === 'NUOVO' || !dpTesta ? "Invia allo SPECIALIST" : "Chiudi e finalizza planning"}>
+                                <span><IconButton type="button" onClick={() => handleSaveAll(true)} color="inherit" size={isMobile ? "small" : "medium"} ><LockIcon /></IconButton></span>
+                            </Tooltip>
+)}
+                        {
+                            currentUserRole === "SPECIALIST" && dpTesta && (
                                 <>
                                     <Tooltip title="Scarica il Daily Planning in formato PDF">
                                         <span>
@@ -1347,15 +1436,13 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                                 onClick={async () => {
                                                     setIsSaving(true);
                                                     try {
-                                                        const blob = await api.getDPPdfReport(dpTesta?.id || 0);
+                                                        const blob = await api.getDPPdfReport(dpTesta.id);
                                                         if (blob instanceof Blob) {
-                                                            console.log("Dimensione del file ricevuto:", blob.size, "bytes");
-                                                            console.log("Tipo MIME del file ricevuto:", blob.type);
                                                             const url = window.URL.createObjectURL(blob);
                                                             const link = document.createElement('a');
                                                             link.href = url;
-                                                            let name = new Date(dpTesta?.giorno || targetDate || Date.now()).toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-                                                            let revisione = dpTesta?.revisione ? `-Rev${dpTesta.revisione>0 ? dpTesta.revisione -1 : 0}` : '';
+                                                            let name = new Date(dpTesta.giorno).toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                                                            let revisione = dpTesta.revisione ? `-Rev${dpTesta.revisione > 0 ? dpTesta.revisione - 1 : 0}` : '';
                                                             link.download = `${name}${revisione}.pdf`;
                                                             document.body.appendChild(link);
                                                             link.click();
@@ -1398,11 +1485,41 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         </Dialog>
     );
 
+    const renderConfirmCloseDialog = () => (
+        <Dialog
+            open={confirmCloseOpen}
+            onClose={() => setConfirmCloseOpen(false)}
+            aria-labelledby="confirm-close-dialog-title"
+        >
+            <DialogTitle id="confirm-close-dialog-title">
+                Salvare le modifiche?
+            </DialogTitle>
+            <DialogContent>
+                <Typography>
+                    Ci sono delle modifiche non salvate. Se chiudi ora, le perderai.
+                </Typography>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={() => setConfirmCloseOpen(false)}>
+                    Annulla
+                </Button>
+                <Button onClick={handleCloseWithoutSaving} color="error">
+                    Chiudi senza salvare
+                </Button>
+                <Button onClick={handleSaveAndClose} variant="contained" autoFocus>
+                    Salva e Chiudi
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'background.default' }}>
             <CssBaseline />
             {renderAppBar()}
             {renderInfoDialog()}
+            {renderConfirmCloseDialog()}
 
             <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
                 {isMobile ? (

@@ -44,7 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const logout = async () => {
         setIsLoading(true);
         try {
-            await apiCall('/auth/logout', 'POST');
+            await apiCall('api/auth/logout', 'POST');
         } catch (error) {
             console.error("Errore durante il logout:", error);
         } finally {

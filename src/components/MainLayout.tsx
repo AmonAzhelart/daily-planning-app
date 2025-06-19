@@ -58,11 +58,11 @@ const MainLayout: React.FC = () => {
         <AppBar position="static" sx={{ backgroundColor: 'background.paper', color: 'text.primary', borderBottom: 1, borderColor: 'divider' }}>
           <Container maxWidth="xl">
             <Toolbar disableGutters>
-              <Typography variant="h6" noWrap component={NavLink} to="/" sx={{ mr: 2, display: { xs: 'none', md: 'flex' }, fontWeight: 700, color: 'inherit', textDecoration: 'none' }}>
+              <Typography variant="h6" noWrap component={NavLink} to="/" sx={{ mr: 2, display: 'flex', fontWeight: 700, color: 'inherit', textDecoration: 'none' }}>
                 Mt Ortho
               </Typography>
 
-              <Box sx={{ flexGrow: 1, display: { xs: 'none', md: 'flex' }, gap: 1 }}>
+              <Box sx={{ flexGrow: 1, display: 'flex' , gap: 1 }}>
                 {navItems.map((item) => (
                   <Button
                     key={item.text}

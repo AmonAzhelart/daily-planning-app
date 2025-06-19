@@ -118,7 +118,7 @@ const CalendarDay: React.FC<{
     const timeDiff = cellDate.getTime() - today.getTime();
     const dayDiff = Math.round(timeDiff / (1000 * 3600 * 24));
     return {
-        isPast: dayDiff < 1,
+        isPast: dayDiff < 0, // Changed to < 0 to exclude today from being "past"
         isToday: dayDiff === 0,
         isFutureFocusDay: dayDiff > 0 && dayDiff <= 3,
     };
@@ -126,7 +126,7 @@ const CalendarDay: React.FC<{
 
     const todayStr = toLocalISOString(new Date());
     const canUnlock = planning?.isLocked && currentUserRole === 'SPECIALIST' && planning.giorno > todayStr;
-    const canBeClicked = day.isCurrentMonth && (planning || !isPast) && (currentUserRole === 'MAGAZZINIERE' || currentUserRole === 'SPECIALIST');
+    const canBeClicked = day.isCurrentMonth && (planning || !isPast);
     const canBeClickedToAdd = day.isCurrentMonth && !isPast && currentUserRole === 'MAGAZZINIERE';
     
 
@@ -134,7 +134,7 @@ const CalendarDay: React.FC<{
     const handleClick = () => {
         if (planning) {
             onNavigate(planning.id);
-        } else if (day.isCurrentMonth && !isPast && canBeClickedToAdd) {
+        } else if (canBeClickedToAdd) {
             onCreate(toLocalISOString(day.date));
         }
     };
@@ -160,13 +160,13 @@ const CalendarDay: React.FC<{
                 position: 'relative',
                 transition: 'all 0.2s ease-in-out',
                 cursor: canBeClicked ? 'pointer' : 'default',
-                opacity: (isPast || isToday) && day.isCurrentMonth ? 0.65 : day.isCurrentMonth ? 1 : 0.4,
+                opacity: day.isCurrentMonth ? 1 : 0.4,
                 border: `1px solid ${theme.palette.divider}`,
                 borderTop: isFutureFocusDay ? `3px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}`,
                 backgroundColor: isFutureFocusDay
                     ? alpha(theme.palette.primary.main, 0.08)
                     : (day.isCurrentMonth ? 'background.paper' : alpha(theme.palette.grey[500], 0.05)),
-                '&:hover': canBeClicked && canBeClickedToAdd
+                '&:hover': canBeClicked
                     ? {
                         backgroundColor: isFutureFocusDay
                             ? alpha(theme.palette.primary.main, 0.12)
@@ -174,25 +174,25 @@ const CalendarDay: React.FC<{
                         ...(isFutureFocusDay && {
                             borderTopColor: theme.palette.primary.dark,
                         }),
-                      }
+                        }
                     : {},
             }}
         >
             <Box display="flex" justifyContent="space-between" alignItems="center">
            {planning && (
-              <Stack direction="row" alignItems="center" spacing={0.5}>
-                <Tooltip title={planning.isLocked ? (canUnlock ? "Clicca per sbloccare" : "Planning bloccato") : "Planning aperto"}>
-                    <span>
-                        <IconButton size="small" onClick={handleLockClick} disabled={planning.isLocked && !canUnlock} sx={{ p: 0.5, color: planning.isLocked ? 'text.secondary' : 'success.main' }}>
-                            {planning.isLocked ? <LockIcon sx={{fontSize: '1rem'}}/> : <LockOpenIcon sx={{fontSize: '1rem'}}/>}
-                        </IconButton>
-                    </span>
-                </Tooltip>
-                <Chip label={`Rev. ${planning.revisione ? planning.revisione>1 ? planning.revisione-1 :0 : 0}`} size="small" sx={{ fontSize: '0.65rem', height: '18px' }}/>
-              </Stack>
+             <Stack direction="row" alignItems="center" spacing={0.5}>
+               <Tooltip title={planning.isLocked ? (canUnlock ? "Clicca per sbloccare" : "Planning bloccato") : "Planning aperto"}>
+                   <span>
+                       <IconButton size="small" onClick={handleLockClick} disabled={planning.isLocked && !canUnlock} sx={{ p: 0.5, color: planning.isLocked ? 'text.secondary' : 'success.main' }}>
+                           {planning.isLocked ? <LockIcon sx={{fontSize: '1rem'}}/> : <LockOpenIcon sx={{fontSize: '1rem'}}/>}
+                       </IconButton>
+                   </span>
+               </Tooltip>
+               <Chip label={`Rev. ${planning.revisione ? planning.revisione>1 ? planning.revisione-1 :0 : 0}`} size="small" sx={{ fontSize: '0.65rem', height: '18px' }}/>
+             </Stack>
            )}
            <Box flexGrow={1} />
-           <Typography variant="body2" fontWeight={isToday ? 'bold' : 'normal'} color={isToday ? 'primary.main' : 'text.primary'} sx={{ backgroundColor: isToday ? alpha(theme.palette.primary.main, 0.1) : 'transparent', borderRadius: '50%', width: 24, height: 24, lineHeight: '24px', textAlign: 'center' }}>
+           <Typography variant="body2" fontWeight={day.isToday ? 'bold' : 'normal'} color={day.isToday ? 'primary.main' : 'text.primary'} sx={{ backgroundColor: day.isToday ? alpha(theme.palette.primary.main, 0.1) : 'transparent', borderRadius: '50%', width: 24, height: 24, lineHeight: '24px', textAlign: 'center' }}>
              {day.date.getDate()}
            </Typography>
             </Box>
@@ -204,13 +204,13 @@ const CalendarDay: React.FC<{
                       <Stack direction="row" alignItems="center" spacing={1}>
                           <FiberManualRecordIcon sx={{ fontSize: '0.8rem', color: statusColor }} />
                           <Typography variant="subtitle2" sx={{ fontWeight: 600, color: statusColor }}>
-                            {planning.stato}
+                              {planning.stato}
                           </Typography>
                       </Stack>
                       {canBeClicked && (
                       <Fade in={isHovered}>
                           <Button size="small" variant="text" endIcon={<ArrowForwardIcon />} onClick={handleClick} sx={{ alignSelf: 'flex-start', mt: 1, p: 0, textTransform: 'none' }}>
-                            Gestisci
+                              Gestisci
                           </Button>
                       </Fade>
                         )}
@@ -220,7 +220,7 @@ const CalendarDay: React.FC<{
                           <Stack direction="row" alignItems="center" spacing={0.5}>
                               <CreateIcon sx={{ fontSize: '0.8rem', color: 'text.secondary' }} />
                               <Typography variant="caption" color="text.secondary" noWrap>
-                                {planning.createdby}
+                                  {planning.createdby}
                               </Typography>
                           </Stack>
                       </Tooltip>
@@ -228,13 +228,13 @@ const CalendarDay: React.FC<{
                           <Stack direction="row" alignItems="center" spacing={0.5}>
                               <EditIcon sx={{ fontSize: '0.8rem', color: 'text.secondary' }} />
                               <Typography variant="caption" color="text.secondary" noWrap>
-                                {planning.modifiedby}
+                                  {planning.modifiedby}
                               </Typography>
                           </Stack>
                       </Tooltip>
                   </Stack>
                 </>
-                ) : day.isCurrentMonth && !isPast && (currentUserRole == "MAGAZZINIERE" ) && (
+                ) : day.isCurrentMonth && !isPast && (currentUserRole === "MAGAZZINIERE" ) && (
                     <Box sx={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'text.disabled', '&:hover .add-icon': { transform: 'scale(1.2)', opacity: 1, color: 'primary.main' } }}>
                         <AddIcon className="add-icon" sx={{ opacity: 0.2, transition: 'all 0.2s ease-in-out' }}/>
                     </Box>
@@ -256,13 +256,13 @@ const DailyPlanningPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     
-    // --- State per la sidebar ---
+    // --- State for the sidebar ---
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [refreshKey, setRefreshKey] = useState(0);
 
-    // NEW: Ref per accedere al componente del form
+    // Ref to access the form component's methods
     const formRef = useRef<DailyPlanningFormRef>(null);
 
     const calendarDays = useMemo(() => generateCalendarDays(displayDate), [displayDate]);
@@ -314,19 +314,28 @@ const DailyPlanningPage: React.FC = () => {
         setIsSidebarOpen(true);
     }, []);
     
-    // MODIFIED: La chiusura della sidebar ora salva la bozza
-    const handleCloseSidebar = useCallback(async () => {
-        if (formRef.current) {
-            await formRef.current.triggerSaveDraft();
-        }
-
+    // MODIFIED: This function is now only called when the form confirms it's ok to close.
+    const handleConfirmAndClear = useCallback(() => {
         setIsSidebarOpen(false);
+        // Delay clearing state to allow for the closing animation
         setTimeout(() => {
             setSelectedPlanningId(null);
             setSelectedDate(null);
-        }, 300); // Ritardo per permettere all'animazione di chiusura di completarsi
-        setRefreshKey(k => k + 1); // Aggiorna la vista del calendario
+        }, 300); 
+        // Refresh the calendar view
+        setRefreshKey(k => k + 1); 
     }, []);
+
+    // NEW: This function initiates the close request. It's called by the Drawer and close button.
+    const handleRequestClose = useCallback(() => {
+        if (formRef.current) {
+            // Delegate the close decision to the form component
+            formRef.current.handleCloseRequest();
+        } else {
+            // Fallback if the form isn't mounted for some reason
+            handleConfirmAndClear();
+        }
+    }, [handleConfirmAndClear]);
 
     const handleToggleLock = useCallback(async (dpId: number, currentStatus: DPStatus) => {
         if (currentStatus !== 'CHIUSO' && currentStatus !== 'MODIFICATO') return;
@@ -335,12 +344,12 @@ const DailyPlanningPage: React.FC = () => {
             return;
         }
         try {
-            await updateDPTesta(dpId, { stato: 'APERTO', modifiedby: currentUserRole });
+            await updateDPTesta(dpId, { stato: 'APERTO', modifiedby: `${user?.first_name} ${user?.last_name}` });
             setRefreshKey(k => k + 1);
         } catch (err: any) {
             alert(`Errore durante lo sblocco del planning: ${err.message}`);
         }
-    }, [currentUserRole, updateDPTesta]);
+    }, [currentUserRole, updateDPTesta, user]);
 
     const changeMonth = (offset: number) => {
         setDisplayDate(current => {
@@ -414,11 +423,12 @@ const DailyPlanningPage: React.FC = () => {
                 </Container>
             </Box>
 
-            {/* --- Drawer per DailyPlanningForm --- */}
+            {/* --- Drawer for DailyPlanningForm --- */}
             <Drawer
                 anchor="right"
                 open={isSidebarOpen}
-                onClose={handleCloseSidebar} // onClose ora gestisce il salvataggio
+                // MODIFIED: Use the new request handler here
+                onClose={handleRequestClose}
                 PaperProps={{
                     sx: {
                         width: { xs: '100vw', sm: '90vw', md: '75vw', lg: '65vw' },
@@ -433,9 +443,10 @@ const DailyPlanningPage: React.FC = () => {
                 <AppBar position="sticky" elevation={0} sx={{boxShadow: 'none', borderBottom: 1, borderColor: 'divider'}}>
                      <Toolbar sx={{ justifyContent: 'space-between' }}>
                          <Typography variant="h6" component="h2" fontWeight="bold">
-                            {selectedPlanningId ? 'Modifica Planning' : 'Nuovo Planning'}
+                             {selectedPlanningId ? 'Modifica Planning' : 'Nuovo Planning'}
                          </Typography>
-                         <IconButton onClick={handleCloseSidebar} edge="end">
+                         {/* MODIFIED: Use the new request handler here */}
+                         <IconButton onClick={handleRequestClose} edge="end">
                              <CloseIcon />
                          </IconButton>
                      </Toolbar>
@@ -443,15 +454,16 @@ const DailyPlanningPage: React.FC = () => {
 
                 <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
                     {isSidebarOpen && (
-                         <DailyPlanningForm
-                            // NEW: Passaggio del ref al componente figlio
+                        <DailyPlanningForm
+                            // NEW: Pass the ref to the child component
                             ref={formRef}
                             key={selectedPlanningId || selectedDate}
                             planningId={selectedPlanningId}
                             targetDate={selectedDate}
-                            onClose={handleCloseSidebar}
+                            // MODIFIED: Pass the confirmation handler to the form
+                            onClose={handleConfirmAndClear}
                             title={'Daily Planning'}
-                          />
+                        />
                     )}
                 </Box>
             </Drawer>
