@@ -127,7 +127,7 @@ const CalendarDay: React.FC<{
     const todayStr = toLocalISOString(new Date());
     const canUnlock = planning?.isLocked && currentUserRole === 'SPECIALIST' && planning.giorno > todayStr;
     const canBeClicked = day.isCurrentMonth && (planning || !isPast);
-    const canBeClickedToAdd = day.isCurrentMonth && !isPast && currentUserRole === 'MAGAZZINIERE';
+    const canBeClickedToAdd = day.isCurrentMonth && !isPast;
     
 
 
@@ -234,7 +234,7 @@ const CalendarDay: React.FC<{
                       </Tooltip>
                   </Stack>
                 </>
-                ) : day.isCurrentMonth && !isPast && (currentUserRole === "MAGAZZINIERE" ) && (
+                ) : day.isCurrentMonth && !isPast && (
                     <Box sx={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'text.disabled', '&:hover .add-icon': { transform: 'scale(1.2)', opacity: 1, color: 'primary.main' } }}>
                         <AddIcon className="add-icon" sx={{ opacity: 0.2, transition: 'all 0.2s ease-in-out' }}/>
                     </Box>

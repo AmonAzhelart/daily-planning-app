@@ -1,5 +1,5 @@
 import React from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   AppBar, Box, CssBaseline, IconButton, Toolbar, Typography, useTheme, ThemeProvider, alpha, Button, Container
 } from '@mui/material';
@@ -7,6 +7,8 @@ import EventNoteIcon from '@mui/icons-material/EventNote';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { createTheme } from '@mui/material/styles';
 import { useAuth } from '../context/AuthContenxt'; // <-- Importa il nostro hook di autenticazione
+import { HomeIcon } from 'lucide-react';
+import { useDailyPlanningApi } from '../customHook/api';
 
 // Il tuo tema personalizzato (epicTheme) può rimanere qui
 // ...
@@ -35,19 +37,39 @@ const MainLayout: React.FC = () => {
   const theme = epicTheme;
   // Utilizziamo il contesto per ottenere dati utente e funzione di logout
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const api = useDailyPlanningApi();
 
   const handleLogout = () => {
-    logout();
+    api.logout();
+    navigate('/login');
   };
 
   const navItems = [
-    { text: 'Daily Planning', icon: <EventNoteIcon />, path: '/' }
+    { text: 'Daily Planning', icon: <EventNoteIcon />, path: '/daily-planning' }
   ];
 
   const activeLinkStyle = {
       backgroundColor: alpha(theme.palette.primary.main, 0.1),
       color: theme.palette.primary.main,
       fontWeight: 'bold',
+  };
+
+  const goToHome = () => {
+    const fetchUrl = async () => {
+      try {
+        const response = await api.getUrlMainApp(); // Assicurati che questo sia l'endpoint corretto per la tua app
+        if (response && response.value) {
+          window.location.href = response.value; // Reindirizza alla home page
+        } else {
+          console.error("Errore nel reindirizzamento alla home page.");
+        }
+      } catch (error) {
+        console.error("Errore nel recupero dell'URL principale:", error);
+      }
+    };
+    fetchUrl();
   };
 
   return (
@@ -58,6 +80,28 @@ const MainLayout: React.FC = () => {
         <AppBar position="static" sx={{ backgroundColor: 'background.paper', color: 'text.primary', borderBottom: 1, borderColor: 'divider' }}>
           <Container maxWidth="xl">
             <Toolbar disableGutters>
+                <IconButton
+                component={NavLink}
+                to="/"
+                sx={{
+                  mr: 2,
+                  color: 'primary.main',
+                  backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                  '&:hover': {
+                  backgroundColor: alpha(theme.palette.primary.main, 0.18),
+                  },
+                  boxShadow: 1,
+                  borderRadius: 2,
+                  transition: 'background 0.2s',
+                }}
+                size="small"
+                edge="start"
+                aria-label="home"
+                onClick={goToHome}
+                >
+                  <HomeIcon style={{ width: 28, height: 28 }} />
+                </IconButton>
+
               <Typography variant="h6" noWrap component={NavLink} to="/" sx={{ mr: 2, display: 'flex', fontWeight: 700, color: 'inherit', textDecoration: 'none' }}>
                 Mt Ortho
               </Typography>

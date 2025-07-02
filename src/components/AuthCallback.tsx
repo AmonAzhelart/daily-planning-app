@@ -13,7 +13,7 @@ const AuthCallback: React.FC = () => {
       // per aggiornare il nostro frontend.
       await checkUserStatus();
       // Una volta che lo stato è aggiornato, navighiamo alla pagina principale.
-      navigate('/');
+      navigate('/daily-planning/');
     };
 
     completeSignIn();

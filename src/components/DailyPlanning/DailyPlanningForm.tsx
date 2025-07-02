@@ -10,6 +10,7 @@ import {
     DialogActions,
     LinearProgress,
     Alert,
+    AvatarGroup,
 } from '@mui/material';
 import {
     Add as AddIcon, Save as SaveIcon, LockOpen as LockOpenIcon, Lock as LockIcon,
@@ -20,6 +21,7 @@ import {
     KeyboardArrowDown as KeyboardArrowDownIcon, KeyboardArrowUp as KeyboardArrowUpIcon,
     WarningAmber as WarningAmberIcon, PersonPin as PersonPinIcon, Warehouse as WarehouseIcon,
     Engineering as EngineeringIcon, InfoOutlined as InfoOutlinedIcon,
+
     WbSunnyOutlined as WbSunnyOutlinedIcon, Brightness2Outlined as Brightness2OutlinedIcon,
     Apartment as ApartmentIcon, AccessTime as AccessTimeIcon, Construction as ConstructionIcon,
     Category as CategoryIcon,
@@ -27,18 +29,15 @@ import {
     ListAltOutlined as ListAltOutlinedIcon, CommentOutlined as CommentOutlinedIcon,
     BadgeOutlined as BadgeOutlinedIcon, FiberManualRecord as FiberManualRecordIcon,
     CloudQueue as CloudQueueIcon, Close as CloseIcon, PictureAsPdf as PictureAsPdfIcon,
-    SyncLock as SyncLockIcon
+    SyncLock as SyncLockIcon, Group as GroupIcon
 } from '@mui/icons-material';
 import { keyframes } from '@mui/system';
-import { useSelector } from 'react-redux';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
-import { RootState } from '../../store/store';
 import {
     useDailyPlanningApi,
-    DPTesta, DPDetail, DPTestaCreate, DPTestaUpdate, DPDetailCreate, DPDetailUpdate,
-    DPDetailTI, DPDetailTICreate, TipoIntervento, ClienteResponseAPI, OauthUser,
-    DPStatus, FasciaOraria, MaterialeDisponibile,
-    UserInfo
+    DPTesta, DPDetail, DPTestaCreate, DPTestaUpdate,
+    TipoIntervento, ClienteResponseAPI, OauthUserResponse,
+    DPStatus, FasciaOraria,
 } from '../../customHook/api';
 import { useAuth } from '../../context/AuthContenxt';
 import { DownloadIcon } from 'lucide-react';
@@ -59,11 +58,11 @@ export interface DailyPlanningFormRef {
 }
 
 
-// --- Frontend Specific Types ---
+// --- Tipi Specifici per il Frontend ---
 export type UserRole = 'MAGAZZINIERE' | 'SPECIALIST';
 
 interface Risorsa {
-    id: string;
+    id: string; // Corrisponde a OauthUserResponse.username
     nome: string;
     sigla: string;
 }
@@ -93,14 +92,14 @@ export interface DailyPlanningDetailRow {
     zohoOriginalTitle: string;
     descrizionemanuale: string;
     selectedClient: Client | null;
-    risorsaAssegnata: Risorsa | null;
+    risorseAssegnate: Risorsa[]; // MODIFICATO: da singola a multipla
     selectedInterventions: SelectedIntervention[];
     notes: string;
     timeSlot: FasciaOraria | '';
     materialAvailable: boolean;
 }
 
-// --- Helper for deriving Resource Acronym ---
+// --- Helper per derivare la sigla della risorsa ---
 const deriveSigla = (firstName: string | null, lastName: string | null): string => {
     const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : '';
     const lastInitial = lastName ? lastName.charAt(0).toUpperCase() : '';
@@ -164,7 +163,6 @@ const ListboxComponent = React.forwardRef<
 
 
 // --- Componente CollapsibleTableRow ---
-// (Componente non modificato, resta identico)
 interface CollapsibleTableRowProps {
     rowData: DailyPlanningDetailRow;
     onRowChange: (updatedRow: DailyPlanningDetailRow) => void;
@@ -175,18 +173,26 @@ interface CollapsibleTableRowProps {
     userRole: string;
     isMobileModalMode?: boolean;
     viewMode: 'mobile' | 'desktop' | 'tablet';
-    onRisorsaAvatarClick?: (event: React.MouseEvent<HTMLButtonElement>, risorsa: Risorsa) => void;
     isReadOnly: boolean;
+    dpStatus: DPStatus | undefined | null;
 }
 
 const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
-    rowData: initialRowData, onRowChange, onDeleteRow, allClients, allInterventionTypes, allRisorse, userRole, isMobileModalMode, viewMode, onRisorsaAvatarClick, isReadOnly
+    rowData: initialRowData, onRowChange, onDeleteRow, allClients, allInterventionTypes, allRisorse, userRole, isMobileModalMode, viewMode, isReadOnly, dpStatus
 }) => {
     const theme = useTheme();
     const [open, setOpen] = useState(false);
     const [localRowData, setLocalRowData] = useState<DailyPlanningDetailRow>(initialRowData);
     const debouncedRowData = useDebounce(localRowData, 400);
     const mounted = useRef(false);
+
+    // State for popovers
+    const [risorsePopoverAnchorEl, setRisorsePopoverAnchorEl] = useState<null | HTMLElement>(null);
+    const [interventiPopoverAnchorEl, setInterventiPopoverAnchorEl] = useState<null | HTMLElement>(null);
+
+    const showRisorsa = useMemo(() => {
+        return userRole === 'SPECIALIST' && dpStatus && dpStatus !== 'NUOVO';
+    }, [userRole, dpStatus]);
 
     useEffect(() => {
         if (mounted.current) {
@@ -196,7 +202,7 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
         } else {
             mounted.current = true;
         }
-    }, [debouncedRowData, initialRowData]);
+    }, [debouncedRowData, onRowChange, initialRowData]);
 
 
     useEffect(() => {
@@ -205,7 +211,6 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
 
 
     const [clientInputValue, setClientInputValue] = useState('');
-    const [risorsaInputValue, setRisorsaInputValue] = useState('');
     const [interventionInputValue, setInterventionInputValue] = useState('');
     const [interventionSearchTerm, setInterventionSearchTerm] = useState<InterventionType | null>(null);
 
@@ -217,9 +222,30 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                     : initialRowData.selectedClient.ragioneSociale
                 : ''
         );
-        setRisorsaInputValue(initialRowData.risorsaAssegnata?.nome || '');
-    }, [initialRowData.selectedClient, initialRowData.risorsaAssegnata]);
+    }, [initialRowData.selectedClient]);
     
+    // Popover Handlers
+    const handleRisorsePopoverOpen = (event: React.MouseEvent<HTMLElement>) => {
+        event.stopPropagation();
+        setRisorsePopoverAnchorEl(event.currentTarget);
+    };
+    const handleRisorsePopoverClose = () => {
+        setRisorsePopoverAnchorEl(null);
+    };
+
+    const handleInterventiPopoverOpen = (event: React.MouseEvent<HTMLElement>) => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (localRowData.selectedInterventions.length > 0) {
+            setInterventiPopoverAnchorEl(event.currentTarget);
+        }
+    };
+    const handleInterventiPopoverClose = (event: React.MouseEvent<HTMLElement>) => {
+        event.stopPropagation();
+        event.preventDefault();
+        setInterventiPopoverAnchorEl(null);
+    };
+
     const handleToggleOpen = useCallback(() => {
         if (open && !isReadOnly) {
             onRowChange(localRowData);
@@ -233,13 +259,13 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
 
     const isRowComplete = useMemo(() => {
         if (userRole === 'SPECIALIST') {
-            return localRowData.risorsaAssegnata && localRowData.selectedClient && localRowData.selectedInterventions.length > 0 && localRowData.timeSlot;
+            return localRowData.risorseAssegnate.length > 0 && localRowData.selectedClient && localRowData.selectedInterventions.length > 0 && localRowData.timeSlot;
         }
         return localRowData.selectedClient && localRowData.selectedInterventions.length > 0 && localRowData.timeSlot;
     }, [localRowData, userRole]);
 
     const handleClientChange = (event: any, newValue: Client | null) => handleFieldChange('selectedClient', newValue);
-    const handleRisorsaChange = (event: any, newValue: Risorsa | null) => handleFieldChange('risorsaAssegnata', newValue);
+    const handleRisorseChange = (event: any, newValue: Risorsa[]) => handleFieldChange('risorseAssegnate', newValue);
 
     const handleTimeSlotChange = (event: React.MouseEvent<HTMLElement>, newTimeSlot: FasciaOraria | null) => {
         if (newTimeSlot !== null) {
@@ -333,20 +359,31 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                     <Typography variant="subtitle1" fontWeight="medium">Informazioni Principali</Typography>
                 </Stack>
                 <Stack spacing={2}>
-                    {userRole === 'SPECIALIST' && (
+                    {showRisorsa && (
                         <Autocomplete
+                            multiple
+                            limitTags={3}
                             fullWidth
                             disabled={isReadOnly}
                             options={allRisorse}
                             getOptionLabel={(option) => `${option.nome} (${option.sigla})`}
-                            value={localRowData.risorsaAssegnata}
-                            onChange={handleRisorsaChange}
-                            inputValue={risorsaInputValue}
-                            onInputChange={(e, val) => setRisorsaInputValue(val)}
-                            isOptionEqualToValue={(o, v) => o.id === v.id}
-                            renderInput={(params) =>
-                                <TextField {...params} label="Risorsa Assegnata" variant="outlined" size="small" />}
-                            noOptionsText="Nessuna risorsa"
+                            value={localRowData.risorseAssegnate}
+                            onChange={handleRisorseChange}
+                            isOptionEqualToValue={(option, value) => option.id === value.id}
+                            renderInput={(params) => (
+                                <TextField 
+                                    {...params} 
+                                    label="Risorse Assegnate" 
+                                    variant="outlined" 
+                                    size="small"
+                                />
+                            )}
+                            renderOption={(props, option, { selected }) => (
+                                <ListItem {...props} key={option.id}>
+                                    <ListItemText primary={`${option.nome} (${option.sigla})`} />
+                                </ListItem>
+                            )}
+                            noOptionsText="Nessuna risorsa trovata"
                         />
                     )}
                     <Autocomplete
@@ -420,21 +457,11 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                         label={
                             <Stack direction="row" alignItems="center" spacing={0.5}>
                                 <CategoryIcon fontSize="small" color={localRowData.materialAvailable ? "primary" : "action"} />
-                                <Typography variant="body2" color="text.secondary">Materiale Disponibile</Typography>
+                                <Typography variant="body2" color="text.secondary">Materiale da prelevare in ufficio</Typography>
                             </Stack>
                         }
                         sx={{ justifyContent: 'space-between', ml: 0, mr: 0.5, color: 'text.secondary' }}
                     />
-                    {!localRowData.materialAvailable && (
-                        <Chip
-                            icon={<WarningAmberIcon fontSize="small" />}
-                            label="Verificare disponibilità materiale"
-                            size="small"
-                            color="warning"
-                            variant="outlined"
-                            sx={{ alignSelf: 'flex-start' }}
-                        />
-                    )}
                 </Stack>
             </Paper>
 
@@ -555,6 +582,11 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
         return <Box sx={{ pt: 0.5, pb: 1 }}>{renderDetailForm()}</Box>;
     }
 
+    const openRisorsePopover = Boolean(risorsePopoverAnchorEl);
+    const openInterventiPopover = Boolean(interventiPopoverAnchorEl);
+    const risorseToShow = localRowData.risorseAssegnate.slice(0, 2);
+    const remainingRisorseCount = localRowData.risorseAssegnate.length - risorseToShow.length;
+
     return (
         <React.Fragment>
             <TableRow
@@ -584,38 +616,60 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                     </Stack>
                 </TableCell>
 
-                {userRole === 'SPECIALIST' && (
+                {showRisorsa && (
                     <TableCell sx={{ fontWeight: 500 }}>
-                        {localRowData.risorsaAssegnata ? (
-                            <Tooltip title={`Risorsa: ${localRowData.risorsaAssegnata.nome}`}>
-                                <Chip
-                                    avatar={
-                                        <Avatar
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (onRisorsaAvatarClick && localRowData.risorsaAssegnata) {
-                                                    onRisorsaAvatarClick(e as unknown as React.MouseEvent<HTMLButtonElement>, localRowData.risorsaAssegnata);
-                                                }
-                                            }}
-                                            sx={{
-                                                width: 24, height: 24, fontSize: '0.75rem',
-                                                bgcolor: theme.palette.secondary.dark,
-                                                color: theme.palette.secondary.contrastText,
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            {localRowData.risorsaAssegnata.sigla}
-                                        </Avatar>
-                                    }
-                                    label={localRowData.risorsaAssegnata.sigla}
-                                    size="small"
-                                    variant="filled"
-                                    sx={{
-                                        backgroundColor: theme.palette.secondary.dark,
-                                        color: theme.palette.common.white,
-                                    }}
-                                />
-                            </Tooltip>
+                        {localRowData.risorseAssegnate.length > 0 ? (
+                            <>
+                                <Stack direction="row" spacing={0.5} flexWrap="wrap" alignItems="center">
+                                    {risorseToShow.map(risorsa => (
+                                        <Tooltip key={risorsa.id} title={`Risorsa: ${risorsa.nome}`}>
+                                            <Chip
+                                                avatar={<Avatar sx={{ width: 22, height: 22, fontSize: '0.7rem' }}>{risorsa.sigla}</Avatar>}
+                                                label={risorsa.sigla}
+                                                size="small"
+                                                sx={{ 
+                                                    bgcolor: theme.palette.secondary.dark, 
+                                                    color: theme.palette.common.white,
+                                                    m: '2px'
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    ))}
+                                    {remainingRisorseCount > 0 && (
+                                        <Tooltip title="Mostra tutte le risorse">
+                                            <Chip
+                                                label={`+${remainingRisorseCount}`}
+                                                size="small"
+                                                onClick={handleRisorsePopoverOpen}
+                                                sx={{ m: '2px', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                                            />
+                                        </Tooltip>
+                                    )}
+                                </Stack>
+                                <Popover
+                                    open={openRisorsePopover}
+                                    anchorEl={risorsePopoverAnchorEl}
+                                    onClose={handleRisorsePopoverClose}
+                                    anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                                    transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                                >
+                                    <Paper sx={{ p: 1, maxWidth: 320 }}>
+                                        <Typography variant="subtitle2" sx={{ px: 2, py: 1 }}>Elenco Risorse</Typography>
+                                        <List dense>
+                                            {localRowData.risorseAssegnate.map(risorsa => (
+                                                <ListItem key={risorsa.id}>
+                                                    <ListItemIcon>
+                                                        <Avatar sx={{ width: 28, height: 28, fontSize: '0.8rem', bgcolor: 'secondary.main' }}>
+                                                            {risorsa.sigla}
+                                                        </Avatar>
+                                                    </ListItemIcon>
+                                                    <ListItemText primary={risorsa.nome} />
+                                                </ListItem>
+                                            ))}
+                                        </List>
+                                    </Paper>
+                                </Popover>
+                            </>
                         ) : (
                             <Chip label="N/D" size="small" variant="outlined" />
                         )}
@@ -670,14 +724,51 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                 </TableCell>
 
                 <TableCell align="center">
-                    <Chip
-                        icon={<BuildIcon sx={{ fontSize: '1rem', ml: '3px' }} />}
-                        label={`${localRowData.selectedInterventions.length} Interv.`}
-                        size="small"
-                        color={localRowData.selectedInterventions.length > 0 ? "primary" : "default"}
-                        variant={localRowData.selectedInterventions.length > 0 ? "filled" : "outlined"}
-                        sx={localRowData.selectedInterventions.length > 0 ? { backgroundColor: 'primary.dark', color: 'common.white' } : { borderColor: alpha(theme.palette.common.black, 0.23) }}
-                    />
+                    <Tooltip title={localRowData.selectedInterventions.length > 0 ? "Mostra elenco interventi" : ""}>
+                        <Chip
+                            icon={<BuildIcon sx={{ fontSize: '1rem', ml: '3px' }} />}
+                            label={`${localRowData.selectedInterventions.length} Interv.`}
+                            size="small"
+                            onClick={handleInterventiPopoverOpen}
+                            disabled={localRowData.selectedInterventions.length === 0}
+                            color={localRowData.selectedInterventions.length > 0 ? "primary" : "default"}
+                            variant={localRowData.selectedInterventions.length > 0 ? "filled" : "outlined"}
+                            sx={{ 
+                                ...(localRowData.selectedInterventions.length > 0 && { 
+                                    backgroundColor: 'primary.dark', 
+                                    color: 'common.white',
+                                    cursor: 'pointer'
+                                }),
+                                ...(localRowData.selectedInterventions.length === 0 && { 
+                                    borderColor: alpha(theme.palette.common.black, 0.23) 
+                                })
+                            }}
+                        />
+                    </Tooltip>
+                    <Popover
+                        open={openInterventiPopover}
+                        anchorEl={interventiPopoverAnchorEl}
+                        onClose={handleInterventiPopoverClose}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+                    >
+                        <Paper sx={{ p: 1.5, maxWidth: 350, minWidth: 250 }}>
+                            <Typography variant="subtitle2" sx={{ mb: 1, px: 1, fontWeight: 'bold' }}>Elenco Interventi</Typography>
+                            <List dense>
+                                {localRowData.selectedInterventions.map(iv => (
+                                    <ListItem key={iv.interventionTypeId} divider>
+                                        <ListItemText
+                                            primary={iv.interventionTypeName}
+                                            primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+                                        />
+                                        <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
+                                            {`Q.tà: ${iv.quantity}`}
+                                        </Typography>
+                                    </ListItem>
+                                ))}
+                            </List>
+                        </Paper>
+                    </Popover>
                 </TableCell>
 
                 <TableCell align="right">
@@ -693,7 +784,7 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
             <TableRow selected={open}>
                 <TableCell
                     style={{ padding: 0, borderBottom: open ? `3px solid ${theme.palette.primary.main}` : 'none' }}
-                    colSpan={userRole === 'SPECIALIST' ? 6 : 5}
+                    colSpan={showRisorsa ? 6 : 5}
                 >
                     <Collapse in={open} timeout={300} unmountOnExit>
                         <Box sx={{ p: { xs: 1.5, sm: 2, md: 2.5 }, backgroundColor: alpha(theme.palette.primary.main, 0.02) }}>
@@ -723,14 +814,13 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     
     const { user } = useAuth();
     const userInfo = user ;
-    const currentUserRole = user?.role?.name ?? '';
+    const currentUserRole = user?.role?.name || 'SPECIALIST';
 
     const api = useDailyPlanningApi();
     const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [pageError, setPageError] = useState<string | null>(null);
     
-    // NEW: State for Zoho re-authentication flow
     const [zohoAuthUrl, setZohoAuthUrl] = useState<string | null>(null);
 
     const [dpRows, setDpRows] = useState<DailyPlanningDetailRow[]>([]);
@@ -745,14 +835,14 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     const [modalOpen, setModalOpen] = useState(false);
     const [currentRowInModal, setCurrentRowInModal] = useState<DailyPlanningDetailRow | null>(null);
 
-    const [risorsaPopoverAnchorEl, setRisorsaPopoverAnchorEl] = useState<HTMLButtonElement | null>(null);
-    const [selectedRisorsaForPopover, setSelectedRisorsaForPopover] = useState<Risorsa | null>(null);
-
     const [infoDialogOpen, setInfoDialogOpen] = useState(false);
     const [infoDialogContent, setInfoDialogContent] = useState({ title: '', message: '' });
     
     const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
+    const showRisorsaColumn = useMemo(() => {
+        return currentUserRole === 'SPECIALIST' && dpTesta?.stato && dpTesta.stato !== 'NUOVO';
+    }, [currentUserRole, dpTesta]);
     
     useEffect(() => {
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -767,39 +857,25 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         };
     }, [isDirty]);
 
-
-    const handleRisorsaAvatarClick = (event: React.MouseEvent<HTMLButtonElement>, risorsa: Risorsa) => {
-        setRisorsaPopoverAnchorEl(event.currentTarget);
-        setSelectedRisorsaForPopover(risorsa);
-    };
-
-    const handleRisorsaPopoverClose = () => {
-        setRisorsaPopoverAnchorEl(null);
-    };
-
-    const risorsaPopoverOpen = Boolean(risorsaPopoverAnchorEl);
-    const risorsaPopoverId = risorsaPopoverOpen ? 'risorsa-info-popover' : undefined;
-
-    // NEW: Refactored data loading into a useCallback to be able to call it again.
-    const loadPlanningData = useCallback(async () => {
+    const loadPlanningData = useCallback(async (idOverride?: number) => {
         setIsLoadingInitialData(true);
         setPageError(null);
         setZohoAuthUrl(null);
-        setIsDirty(false);
-        
+
+        const idToLoad = idOverride ?? planningId;
         let currentDpTesta: DPTesta | null = null;
-        
-        if (planningId) {
+
+        if (idToLoad) {
             try {
-                currentDpTesta = await api.getDPTesta(Number(planningId));
+                currentDpTesta = await api.getDPTesta(Number(idToLoad));
                 setDpTesta(currentDpTesta);
             } catch (err) {
-                setPageError(`Planning con ID ${planningId} non trovato.`);
+                setPageError(`Planning con ID ${idToLoad} non trovato.`);
                 setIsLoadingInitialData(false);
                 return;
             }
         }
-        
+
         const dateForProcessing = currentDpTesta?.giorno || targetDate;
         if (!dateForProcessing) {
             setIsLoadingInitialData(false);
@@ -812,7 +888,6 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 api.getInterventionTypes(),
                 api.getResources(),
             ]);
-
             const mappedClients: Client[] = clientsData.map(c => ({ id: c.id_sede, ragioneSociale: c.cliente, nomeBreve: c.sede === '(la stessa)' ? c.cliente : c.sede }));
             const mappedInterventionTypes: InterventionType[] = interventionTypesData.map(it => ({ id: it.id, name: it.descrizione || 'N/A' }));
             const mappedRisorse: Risorsa[] = resourcesData.map(r => ({ id: r.username, nome: `${r.first_name || ''} ${r.last_name || ''}`.trim(), sigla: deriveSigla(r.first_name, r.last_name) }));
@@ -820,106 +895,169 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             setInterventionTypes(mappedInterventionTypes);
             setRisorse(mappedRisorse);
 
-            const shouldSyncWithZoho = !currentDpTesta || currentDpTesta.stato === 'NUOVO';
-            
-            if (shouldSyncWithZoho) {
-                const zohoEventsFromApi = await api.get_zoho_events(dateForProcessing);
-                const zohoEventsMap = new Map<string, any>(zohoEventsFromApi.map(event => [event.caluid, event]));
-                
-                let processedRows: DailyPlanningDetailRow[] = [];
-                let wasModified = false;
-                
-                if (currentDpTesta) {
-                    const currentDpDetails = await api.getDPDetailsByTesta(Number(planningId));
-                    const deletionPromises: Promise<any>[] = [];
-
-                    processedRows = (await Promise.all(currentDpDetails.map(async (detail) => {
-                        const client = detail.id_sede == null ? null : mappedClients.find(c => c.id === detail.id_sede) ?? null;
-                        const risorsa = mappedRisorse.find(r => r.id === detail.id_agpspm) || null;
-                        const detailInterventions = await api.getDPDetailTIsByDetail(detail.id);
-                        const mappedInterventions: SelectedIntervention[] = detailInterventions.map(dti => {
-                            const type = mappedInterventionTypes.find(it => it.id === dti.id_tipi_interventi);
-                            return { id: dti.id, interventionTypeId: dti.id_tipi_interventi, interventionTypeName: type ? type.name : 'Sconosciuto', quantity: dti.qta };
-                        });
-
-                        const rowBase = {
-                            id: detail.id, isNew: false, selectedClient: client, risorsaAssegnata: risorsa,
-                            selectedInterventions: mappedInterventions, notes: detail.note || '',
-                            timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
-                        };
-                        
-                        if (!detail.caluid) {
-                            return { ...rowBase, zohoEventId: null, zohoOriginalTitle: '', descrizionemanuale: detail.descrizionemanuale || '' };
-                        }
-
-                        const matchingZohoEvent = zohoEventsMap.get(detail.caluid);
-                        if (matchingZohoEvent) {
-                            zohoEventsMap.delete(detail.caluid);
-                            const originalTitle = matchingZohoEvent.title || matchingZohoEvent.description || 'Attività Zoho';
-                            return { ...rowBase, zohoEventId: detail.caluid, zohoOriginalTitle: originalTitle, descrizionemanuale: detail.descrizionemanuale || originalTitle };
-                        } else {
-                            wasModified = true;
-                            deletionPromises.push(api.deleteDPDetail(detail.id));
-                            return null;
-                        }
-                    }))).filter(Boolean) as DailyPlanningDetailRow[];
-
-                    if(deletionPromises.length > 0) await Promise.all(deletionPromises);
+            let zohoEventsFromApi: any[] = [];
+            try {
+                zohoEventsFromApi = await api.get_zoho_events(dateForProcessing);
+            } catch (zohoErr: any) {
+                if (zohoErr.message === "Unauthorized") {
+                    throw zohoErr;
                 }
+                console.warn("Could not fetch Zoho events, continuing without them:", zohoErr.message);
+            }
+            const zohoEventsCache = new Map<string, any>(zohoEventsFromApi.map(event => [event.caluid, event]));
 
-                const newZohoRows: DailyPlanningDetailRow[] = Array.from(zohoEventsMap.values()).map(zohoEvent => {
+            const mapSingleDetailToRow = async (detail: DPDetail): Promise<DailyPlanningDetailRow> => {
+                const client = detail.id_sede == null ? null : mappedClients.find(c => c.id === detail.id_sede) ?? null;
+                const detailRisorse = detail.agpspm_users
+                    .map(user => mappedRisorse.find(r => r.id === user.username))
+                    .filter((r): r is Risorsa => r !== undefined);
+
+                const detailInterventions = await api.getDPDetailTIsByDetail(detail.id);
+                const mappedInterventions: SelectedIntervention[] = detailInterventions.map(dti => {
+                    const type = mappedInterventionTypes.find(it => it.id === dti.id_tipi_interventi);
+                    return { id: dti.id, interventionTypeId: dti.id_tipi_interventi, interventionTypeName: type ? type.name : 'Sconosciuto', quantity: dti.qta };
+                });
+
+                const matchingZohoEvent = detail.caluid ? zohoEventsCache.get(detail.caluid) : undefined;
+                const originalTitle = matchingZohoEvent?.title || matchingZohoEvent?.description || detail.descrizionemanuale || `Attività ID: ${detail.id}`;
+
+                return {
+                    id: detail.id, isNew: false, zohoEventId: detail.caluid,
+                    zohoOriginalTitle: originalTitle,
+                    descrizionemanuale: detail.descrizionemanuale || originalTitle,
+                    selectedClient: client, 
+                    risorseAssegnate: detailRisorse,
+                    selectedInterventions: mappedInterventions, notes: detail.note || '',
+                    timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
+                };
+            };
+            
+            const mapDbDetailsToRows = (details: DPDetail[]): Promise<DailyPlanningDetailRow[]> => {
+                return Promise.all(details.map(mapSingleDetailToRow));
+            };
+
+
+            if (currentDpTesta) {
+                const currentDpDetails = await api.getDPDetailsByTesta(Number(idToLoad));
+                let processedRows: DailyPlanningDetailRow[] = [];
+
+                if (currentDpTesta.stato === 'NUOVO') {
+                    // Costruisci una mappa dei dettagli esistenti per un accesso rapido
+                    const dbDetailsMapByCaluid = new Map(currentDpDetails.filter(d => d.caluid).map(detail => [detail.caluid, detail]));
+                    
+                    // Mappa tutti gli eventi Zoho e i dettagli manuali in un unico array iniziale
+                    const allDetailsPromises = zohoEventsFromApi.map(zohoEvent => {
+                        const existingDetail = dbDetailsMapByCaluid.get(zohoEvent.caluid);
+                        if (existingDetail) {
+                            return mapSingleDetailToRow(existingDetail);
+                        } else {
+                            const originalTitle = zohoEvent.title || zohoEvent.description || 'Nuova Attività Zoho';
+                            return Promise.resolve({
+                                id: uuidv4(), isNew: true, zohoEventId: zohoEvent.caluid,
+                                zohoOriginalTitle: originalTitle, descrizionemanuale: originalTitle,
+                                selectedClient: null, risorseAssegnate: [], selectedInterventions: [],
+                                notes: zohoEvent.note || '', timeSlot: zohoEvent.fasciaoraria || '',
+                                materialAvailable: zohoEvent.materialedisponibile === 'SI',
+                            });
+                        }
+                    });
+
+                    const zohoEventCaluids = new Set(zohoEventsFromApi.map(e => e.caluid));
+                    const manualDetails = currentDpDetails.filter(d => !d.caluid || !zohoEventCaluids.has(d.caluid));
+                    manualDetails.forEach(manualDetail => allDetailsPromises.push(mapSingleDetailToRow(manualDetail)));
+                    
+                    const initialRows = await Promise.all(allDetailsPromises);
+
+                    // --- LOGICA DI ORDINAMENTO AVANZATA ---
+                    const zohoEventOrder = new Map(zohoEventsFromApi.map((event, index) => [event.caluid, index]));
+
+                    const getSlotSortValue = (slot: FasciaOraria | '') => {
+                        if (slot === 'AM') return 1;
+                        if (slot === 'PM') return 2;
+                        return 3; // Le attività senza fascia oraria vanno alla fine
+                    };
+
+                    initialRows.sort((a, b) => {
+                        // 1. Ordina per fascia oraria (AM -> PM -> Senza fascia)
+                        const slotComparison = getSlotSortValue(a.timeSlot) - getSlotSortValue(b.timeSlot);
+                        if (slotComparison !== 0) return slotComparison;
+
+                        // 2. All'interno della stessa fascia, metti le manuali prima
+                        const aIsManual = !a.zohoEventId;
+                        const bIsManual = !b.zohoEventId;
+                        if (aIsManual && !bIsManual) return -1;
+                        if (!aIsManual && bIsManual) return 1;
+
+                        // 3. Se entrambe sono da Zoho, usa l'ordine originale di Zoho
+                        if (!aIsManual && !bIsManual && a.zohoEventId && b.zohoEventId) {
+                            const aIndex = zohoEventOrder.get(a.zohoEventId);
+                            const bIndex = zohoEventOrder.get(b.zohoEventId);
+                            if (aIndex !== undefined && bIndex !== undefined) {
+                                return aIndex - bIndex;
+                            }
+                        }
+                        
+                        // 4. Per le manuali o in caso di fallback, non cambiare l'ordine relativo
+                        return 0;
+                    });
+                    
+                    processedRows = initialRows;
+
+                    if (initialRows.some(r => r.isNew)) {
+                        setIsDirty(true);
+                    }
+                } else {
+                    // Per stati diversi da 'NUOVO', l'ordine del DB è la fonte di verità.
+                    processedRows = await mapDbDetailsToRows(currentDpDetails);
+                }
+                setDpRows(processedRows);
+
+            } else {
+                // Logica per un planning completamente nuovo (nessun planningId).
+                const newZohoRows: DailyPlanningDetailRow[] = zohoEventsFromApi.map(zohoEvent => {
                     const originalTitle = zohoEvent.title || zohoEvent.description || 'Nuova Attività Zoho';
                     return {
                         id: uuidv4(), isNew: true, zohoEventId: zohoEvent.caluid,
                         zohoOriginalTitle: originalTitle, descrizionemanuale: originalTitle,
-                        selectedClient: null, risorsaAssegnata: null, selectedInterventions: [],
+                        selectedClient: null, 
+                        risorseAssegnate: [],
+                        selectedInterventions: [],
                         notes: zohoEvent.note || '', timeSlot: zohoEvent.fasciaoraria || '',
                         materialAvailable: zohoEvent.materialedisponibile === 'SI',
                     };
                 });
-                
-                setDpRows([...processedRows, ...newZohoRows]);
-                if (newZohoRows.length > 0 || wasModified) setIsDirty(true);
-
-            } else {
-                const currentDpDetails = await api.getDPDetailsByTesta(Number(planningId));
-                const dbRows = await Promise.all(currentDpDetails.map(async (detail) => {
-                    const client = detail.id_sede == null ? null : mappedClients.find(c => c.id === detail.id_sede) ?? null;
-                    const risorsa = mappedRisorse.find(r => r.id === detail.id_agpspm) || null;
-                    const detailInterventions = await api.getDPDetailTIsByDetail(detail.id);
-                    const mappedInterventions: SelectedIntervention[] = detailInterventions.map(dti => {
-                        const type = mappedInterventionTypes.find(it => it.id === dti.id_tipi_interventi);
-                        return { id: dti.id, interventionTypeId: dti.id_tipi_interventi, interventionTypeName: type ? type.name : 'Sconosciuto', quantity: dti.qta };
-                    });
-                    const originalTitle = detail.descrizionemanuale || `Attività ID: ${detail.id}`;
-                    
-                    return {
-                        id: detail.id, isNew: false, zohoEventId: detail.caluid,
-                        zohoOriginalTitle: originalTitle,
-                        descrizionemanuale: detail.descrizionemanuale || originalTitle,
-                        selectedClient: client, risorsaAssegnata: risorsa,
-                        selectedInterventions: mappedInterventions, notes: detail.note || '',
-                        timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
-                    };
-                }));
-                setDpRows(dbRows);
+                setDpRows(newZohoRows);
+                if (newZohoRows.length > 0) setIsDirty(true);
             }
             
             if (currentDpTesta) {
                 const { stato } = currentDpTesta;
                 let readOnly = false;
-                if (stato === 'CHIUSO' || stato === 'MODIFICATO') readOnly = true;
-                else if (currentUserRole === 'MAGAZZINIERE' && stato === 'APERTO') readOnly = true;
-                else if (currentUserRole === 'SPECIALIST' && stato === 'NUOVO') readOnly = true;
+                
+                const planningDate = new Date(currentDpTesta.giorno);
+                planningDate.setHours(0, 0, 0, 0);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                if (planningDate < today) {
+                    readOnly = true;
+                }
+                else if (stato === 'CHIUSO' || stato === 'MODIFICATO') {
+                    readOnly = true;
+                }
+                else if (currentUserRole === 'MAGAZZINIERE' && stato !== 'NUOVO') {
+                    readOnly = true;
+                }
                 setIsReadOnly(readOnly);
-            } else { 
-                setIsReadOnly(currentUserRole === 'SPECIALIST');
+            } else {
+                setIsReadOnly(false);
             }
+            
+            setIsDirty(false);
 
         } catch (err: any) {
-            console.log("Errore caricamento dati:", err.message);
-            // NEW: Handle 401 Unauthorized for Zoho
-            if (err.message ==  "Unauthorized") {
+            console.error("Errore caricamento dati:", err.message);
+            if (err.message === "Unauthorized") {
                 console.warn("Sessione Zoho scaduta o non autenticata.");
                 setPageError("La sessione di Zoho Calendar è scaduta. È necessaria una nuova autenticazione.");
                 try {
@@ -941,6 +1079,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         }
     }, [planningId, targetDate, currentUserRole, api]);
 
+
     useEffect(() => {
         loadPlanningData();
     }, []);
@@ -948,7 +1087,12 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
 
     const handleRowChange = useCallback((updatedRow: DailyPlanningDetailRow) => {
         if (isReadOnly) return;
-        setDpRows(prevRows => prevRows.map(row => (row.id === updatedRow.id ? updatedRow : row)));
+        setDpRows(prevRows => {
+            const newRows = prevRows.map(row => (row.id === updatedRow.id ? updatedRow : row));
+            // Qui potresti dover ri-ordinare se la fascia oraria cambia
+            // Per semplicità, per ora manteniamo l'ordine dopo la modifica
+            return newRows;
+        });
         setIsDirty(true);
     }, [isReadOnly]);
 
@@ -962,12 +1106,13 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             zohoOriginalTitle: '',
             descrizionemanuale: '',
             selectedClient: null,
-            risorsaAssegnata: null,
+            risorseAssegnate: [],
             selectedInterventions: [],
             notes: '',
             timeSlot: '',
             materialAvailable: false,
         };
+        // Inserisce la nuova riga in cima per visibilità immediata
         setDpRows(prevRows => [newRow, ...prevRows]);
         setIsDirty(true);
         if (isMobile) {
@@ -986,6 +1131,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 setIsDirty(true);
             } catch (err: any) {
                 setPageError(`Errore durante l'eliminazione della riga: ${err.message}`);
+                // Ripristina la riga in caso di errore
                 setDpRows(currentRows => [...currentRows, rowToDelete]);
             }
         } else {
@@ -994,7 +1140,10 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     }, [api, dpRows, isReadOnly]);
 
    const handleSaveAll = useCallback(async (isClosingAction: boolean): Promise<boolean> => {
-        if (isReadOnly) return false;
+        if (isReadOnly) {
+            setPageError("Il planning è in modalità sola lettura.");
+            return false;
+        }
         
         setIsSaving(true);
         setPageError(null);
@@ -1004,7 +1153,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         try {
             if (!testaToProcess) {
                 if (!targetDate) {
-                    throw new Error("Target date is required to create a new planning.");
+                    throw new Error("La data è obbligatoria per creare un nuovo planning.");
                 }
                 const newDpTestaData: DPTestaCreate = {
                     giorno: targetDate,
@@ -1022,22 +1171,21 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             }
     
             let nextState = testaToProcess.stato;
-            let nextRevision = testaToProcess.revisione ? testaToProcess.revisione > 1 ? testaToProcess.revisione - 1 : 0 : 0;
-            let modified = testaToProcess.revisione ? testaToProcess.revisione > 0 : false;
-            let infoMessage = "Planning salvato con successo!";
+            let infoMessage = "Bozza del planning salvata con successo!";
     
             if (isClosingAction) {
-                if (currentUserRole === 'MAGAZZINIERE' && testaToProcess.stato === 'NUOVO') {
+                if ((currentUserRole === 'MAGAZZINIERE' || currentUserRole === 'SPECIALIST') && testaToProcess.stato === 'NUOVO') {
                     nextState = 'APERTO';
-                    infoMessage = "Planning inviato allo SPECIALIST. Stato: APERTO.";
-                } else if (currentUserRole === 'SPECIALIST' && testaToProcess.stato === 'APERTO') {
-                    if (!modified) {
+                    infoMessage = "Planning aggiornato allo stato 'APERTO' e pronto per la gestione.";
+                } 
+                else if (currentUserRole === 'SPECIALIST' && testaToProcess.stato === 'APERTO') {
+                    const isModified = testaToProcess.revisione ? testaToProcess.revisione > 0 : false;
+                    if (!isModified) {
                         nextState = 'CHIUSO';
                         infoMessage = `Planning chiuso per la prima volta. Stato: CHIUSO`;
                     } else {
                         nextState = 'MODIFICATO';
-                        nextRevision += 1;
-                        infoMessage = `Planning chiuso dopo modifiche. Stato: MODIFICATO, Rev: ${nextRevision}.`;
+                        infoMessage = `Planning chiuso dopo modifiche. Stato: MODIFICATO, Rev: ${testaToProcess.revisione || 1}.`;
                     }
                 }
             }
@@ -1049,7 +1197,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                     id: typeof row.id === 'string' ? undefined : Number(row.id),
                     caluid: row.zohoEventId || null,
                     id_sede: row.selectedClient?.id || null,
-                    id_agpspm: row.risorsaAssegnata?.id || null,
+                    agpspm_users: row.risorseAssegnate.map(r => r.id),
                     descrizionemanuale: row.descrizionemanuale,
                     note: row.notes,
                     fasciaoraria: (row.timeSlot === 'AM' || row.timeSlot === 'PM') ? row.timeSlot : 'AM',
@@ -1061,42 +1209,11 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 }))
             };
     
-            const finalUpdatedTesta = await api.updateDPTesta(testaToProcess.id, updatePayload);
-    
-            const finalDetails = await api.getDPDetailsByTesta(finalUpdatedTesta.id);
-            const finalRows = await Promise.all(finalDetails.map(async (detail) => {
-                const client = clients.find(c => c.id === detail.id_sede) ?? null;
-                const risorsa = risorse.find(r => r.id === detail.id_agpspm) || null;
-                const detailInterventions = await api.getDPDetailTIsByDetail(detail.id);
-                const mappedInterventions: SelectedIntervention[] = detailInterventions.map(dti => {
-                    const type = interventionTypes.find(it => it.id === dti.id_tipi_interventi);
-                    return { id: dti.id, interventionTypeId: dti.id_tipi_interventi, interventionTypeName: type ? type.name : 'Sconosciuto', quantity: dti.qta };
-                });
-    
-                const originalTitle = detail.descrizionemanuale || `Attività ID: ${detail.id}`;
-                        
-                return {
-                    id: detail.id, isNew: false, zohoEventId: detail.caluid,
-                    zohoOriginalTitle: originalTitle, descrizionemanuale: detail.descrizionemanuale || originalTitle,
-                    selectedClient: client, risorsaAssegnata: risorsa, selectedInterventions: mappedInterventions,
-                    notes: detail.note || '', timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
-                };
-            }));
+            await api.updateDPTesta(testaToProcess.id, updatePayload);
             
-            setDpTesta(finalUpdatedTesta);
-            setDpRows(finalRows);
+            await loadPlanningData(testaToProcess.id);
+            
             setIsDirty(false);
-    
-            let readOnly = false;
-            if (finalUpdatedTesta.stato === 'CHIUSO' || finalUpdatedTesta.stato === 'MODIFICATO') {
-                readOnly = true;
-            } else if (currentUserRole === 'MAGAZZINIERE' && finalUpdatedTesta.stato === 'APERTO') {
-                readOnly = true;
-            } else if (currentUserRole === 'SPECIALIST' && finalUpdatedTesta.stato === 'NUOVO') {
-                readOnly = true;
-            }
-            setIsReadOnly(readOnly);
-    
             setInfoDialogContent({ title: "Operazione completata", message: infoMessage });
             setInfoDialogOpen(true);
 
@@ -1109,85 +1226,11 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         } finally {
             setIsSaving(false);
         }
-    }, [dpTesta, dpRows, api, currentUserRole, targetDate, userInfo, isReadOnly, clients, risorse, interventionTypes]);
+    }, [dpTesta, dpRows, api, currentUserRole, targetDate, userInfo, isReadOnly, loadPlanningData]);
     
     const handleSaveDraft = useCallback(async () => {
-        if (!isDirty || isReadOnly || isSaving) {
-            return;
-        }
-
-        setIsSaving(true);
-        setPageError(null);
-        
-        let testaToProcess: DPTesta | null = dpTesta;
-
-        try {
-            if (!testaToProcess) {
-                if (!targetDate) throw new Error("Target date is required for a new planning.");
-                const newDpTestaData: DPTestaCreate = {
-                    giorno: targetDate,
-                    createdby: `${userInfo?.first_name} ${userInfo?.last_name}`,
-                    modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}`,
-                    stato: 'NUOVO',
-                    revisione: 0,
-                };
-                testaToProcess = await api.createDPTesta(newDpTestaData);
-                setDpTesta(testaToProcess);
-            }
-
-            if (!testaToProcess) {
-                throw new Error("Impossibile creare o trovare la testata del planning.");
-            }
-            
-            const updatePayload: DPTestaUpdate = {
-                stato: testaToProcess.stato,
-                modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}`,
-                details: dpRows.map(row => ({
-                    id: typeof row.id === 'string' ? undefined : Number(row.id),
-                    caluid: row.zohoEventId || null,
-                    id_sede: row.selectedClient?.id || null,
-                    id_agpspm: row.risorsaAssegnata?.id || null,
-                    descrizionemanuale: row.descrizionemanuale,
-                    note: row.notes,
-                    fasciaoraria: (row.timeSlot === 'AM' || row.timeSlot === 'PM') ? row.timeSlot : 'AM',
-                    materialedisponibile: row.materialAvailable ? 'SI' : 'NO',
-                    interventions: row.selectedInterventions.map(si => ({
-                        id_tipi_interventi: si.interventionTypeId,
-                        qta: si.quantity
-                    }))
-                }))
-            };
-
-            const finalUpdatedTesta = await api.updateDPTesta(testaToProcess.id, updatePayload);
-
-            const finalDetails = await api.getDPDetailsByTesta(finalUpdatedTesta.id);
-            const finalRows = await Promise.all(finalDetails.map(async (detail) => {
-                 const client = clients.find(c => c.id === detail.id_sede) ?? null;
-                const risorsa = risorse.find(r => r.id === detail.id_agpspm) || null;
-                const detailInterventions = await api.getDPDetailTIsByDetail(detail.id);
-                const mappedInterventions: SelectedIntervention[] = detailInterventions.map(dti => {
-                    const type = interventionTypes.find(it => it.id === dti.id_tipi_interventi);
-                    return { id: dti.id, interventionTypeId: dti.id_tipi_interventi, interventionTypeName: type ? type.name : 'Sconosciuto', quantity: dti.qta };
-                });
-                const originalTitle = detail.descrizionemanuale || `Attività ID: ${detail.id}`;
-                return {
-                    id: detail.id, isNew: false, zohoEventId: detail.caluid,
-                    zohoOriginalTitle: originalTitle, descrizionemanuale: detail.descrizionemanuale || originalTitle,
-                    selectedClient: client, risorsaAssegnata: risorsa, selectedInterventions: mappedInterventions,
-                    notes: detail.note || '', timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
-                };
-            }));
-            
-            setDpTesta(finalUpdatedTesta);
-            setDpRows(finalRows);
-            setIsDirty(false);
-
-        } catch (err: any) {
-            console.error("Errore durante il salvataggio della bozza:", err);
-        } finally {
-            setIsSaving(false);
-        }
-    }, [isDirty, isReadOnly, isSaving, dpTesta, dpRows, api, userInfo, targetDate, clients, risorse, interventionTypes]);
+        await handleSaveAll(false);
+    }, [handleSaveAll]);
 
     const handleCloseRequest = useCallback(() => {
         if (isDirty && !isReadOnly) {
@@ -1225,21 +1268,18 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}`,
             });
 
-            setDpTesta(prev => prev ? { ...prev, stato: 'APERTO', modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}` } : null);
-            setIsReadOnly(false);
-            setIsDirty(true);
-
-            setInfoDialogContent({ title: "Planning Riaperto", message: "Il planning è stato sbloccato ed è ora modificabile. Salva le modifiche per confermare." });
+            await loadPlanningData(dpTesta.id);
+            setInfoDialogContent({ title: "Planning Riaperto", message: "Il planning è stato sbloccato ed è ora modificabile." });
             setInfoDialogOpen(true);
-
-        } catch (err: any) {
+        } catch (err: any)
+        {
             console.error("Errore durante la riapertura:", err);
             setPageError(`Impossibile riaprire il planning: ${err.message || 'Errore sconosciuto'}`);
         } finally {
             setIsSaving(false);
         }
 
-    }, [api, dpTesta, currentUserRole, userInfo]);
+    }, [api, dpTesta, currentUserRole, userInfo, loadPlanningData]);
 
 
     const handleCardClick = (row: DailyPlanningDetailRow) => {
@@ -1269,20 +1309,15 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         setCurrentRowInModal(null);
     };
 
-    // NEW: Handles the Zoho Login popup flow
     const handleZohoLogin = () => {
         if (!zohoAuthUrl) return;
-
         const popup = window.open(zohoAuthUrl, 'ZohoAuthPopup', 'width=600,height=700,left=200,top=100');
-        
         setIsLoadingInitialData(true);
         setPageError(null);
         setZohoAuthUrl(null);
-
         const timer = setInterval(() => {
             if (!popup || popup.closed) {
                 clearInterval(timer);
-                console.log("Popup di autenticazione chiuso, ricarico i dati...");
                 loadPlanningData();
             }
         }, 1000);
@@ -1290,38 +1325,33 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     
     const isCardRowComplete = (row: DailyPlanningDetailRow) => {
         if (currentUserRole === 'SPECIALIST') {
-            return row.risorsaAssegnata && row.selectedClient && row.selectedInterventions.length > 0 && row.timeSlot;
+            return !!(row.risorseAssegnate.length > 0 && row.selectedClient && row.selectedInterventions.length > 0 && row.timeSlot);
         }
-        return row.selectedClient && row.selectedInterventions.length > 0 && row.timeSlot;
+        return !!(row.selectedClient && row.selectedInterventions.length > 0 && row.timeSlot);
     };
 
-    const getAvatarLetter = (row: DailyPlanningDetailRow) => {
-        if (currentUserRole === 'SPECIALIST' && row.risorsaAssegnata) {
-            return row.risorsaAssegnata.sigla || row.risorsaAssegnata.nome[0].toUpperCase();
-        }
-        if (row.selectedClient && row.selectedClient.nomeBreve) return row.selectedClient.nomeBreve[0].toUpperCase();
-        if (row.selectedClient) return row.selectedClient.ragioneSociale[0].toUpperCase();
-        return row.descrizionemanuale?.[0]?.toUpperCase() || '?';
-    }
     const getStatusColor = (row: DailyPlanningDetailRow) => {
         return isCardRowComplete(row) ? theme.palette.success.main : theme.palette.warning.main;
     }
 
-    // NEW: Render state for Zoho authentication
+    const getCloseButtonTooltip = () => {
+        const state = dpTesta?.stato;
+        if (state === 'APERTO') return "Chiudi e finalizza planning";
+        if (currentUserRole === 'MAGAZZINIERE') return "Invia allo SPECIALIST";
+        if (currentUserRole === 'SPECIALIST') return "Conferma e Apri il planning per la gestione";
+        return "Blocca planning";
+    };
+
     if (zohoAuthUrl) {
         return (
             <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p: 3, height: '100%' }}>
                 <Paper elevation={3} sx={{ p: {xs: 2, sm: 4}, textAlign: 'center', maxWidth: 480, m: 2, borderRadius: 2 }}>
                     <SyncLockIcon color="error" sx={{ fontSize: 48, mb: 2 }} />
-                    <Typography variant="h6" component="h2" gutterBottom fontWeight="bold">
-                        Autenticazione Richiesta
-                    </Typography>
+                    <Typography variant="h6" component="h2" gutterBottom fontWeight="bold">Autenticazione Richiesta</Typography>
                     <Typography sx={{ my: 2, color: 'text.secondary' }}>
                         {pageError || "Per sincronizzare i dati, è necessario autenticarsi nuovamente con Zoho Calendar."}
                     </Typography>
-                    <Button variant="contained" onClick={handleZohoLogin} startIcon={<LockOpenIcon />}>
-                        Effettua il login su Zoho
-                    </Button>
+                    <Button variant="contained" onClick={handleZohoLogin} startIcon={<LockOpenIcon />}>Effettua il login su Zoho</Button>
                 </Paper>
             </Box>
         );
@@ -1332,11 +1362,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     }
     
     if (pageError) {
-         return (
-            <Box sx={{ p: 3 }}>
-                <Alert severity="error" variant="filled">{pageError}</Alert>
-            </Box>
-        )
+         return <Box sx={{ p: 3 }}><Alert severity="error" variant="filled" onClose={() => setPageError(null)}>{pageError}</Alert></Box>;
     }
 
     const renderAppBar = () => (
@@ -1346,25 +1372,11 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                     <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', gap: 1, flexWrap: 'wrap' }}>
                         {isReadOnly && (
                             <Tooltip title="Questo planning è bloccato e non può essere modificato.">
-                                <Chip
-                                    icon={<LockIcon />}
-                                    label="Bloccato"
-                                    color="secondary"
-                                    size="small"
-                                    variant="filled"
-                                    sx={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        color: 'common.white',
-                                        ".MuiChip-icon": { margin: 0 }
-                                    }}
-                                />
+                                <Chip icon={<LockIcon />} label="Bloccato" color="error" size="small" variant="filled" />
                             </Tooltip>
                         )}
                         <Box sx={{ flexGrow: 1 }}>
-                            <Typography variant="h6" component="h1" sx={{ fontWeight: 'bold', fontSize: '1.15rem' }}>
-                                {title}
-                            </Typography>
+                            <Typography variant="h6" component="h1" sx={{ fontWeight: 'bold', fontSize: '1.15rem' }}>{title}</Typography>
                             <Typography variant="caption" >
                                 {new Date(dpTesta?.giorno || targetDate || Date.now()).toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                             </Typography>
@@ -1374,98 +1386,70 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                     <Stack direction="row" spacing={1} alignItems="center">
                         {isDirty && !isReadOnly && (
                             <Chip 
-                                label="Non Salvato" 
-                                size="small"
-                                variant="outlined"
-                                sx={{
-                                    color: 'warning.light',
-                                    borderColor: 'warning.light',
-                                    animation: `${pulseAnimation} 2s infinite`,
-                                    fontWeight: 'medium',
-                                    height: 24,
-                                }}
+                                label="Non Salvato" size="small" variant="outlined"
+                                sx={{ color: 'warning.light', borderColor: 'warning.light', animation: `${pulseAnimation} 2s infinite`, fontWeight: 'medium', height: 24 }}
                             />
                         )}
                         
-                        {dpTesta?.giorno && (() => {
-                            const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-                            const target = new Date(dpTesta?.giorno);
-                            target.setHours(0, 0, 0, 0);
-                            return target.getTime() > today.getTime();
-                        })() && isReadOnly && currentUserRole === 'SPECIALIST' && (dpTesta?.stato === 'CHIUSO' || dpTesta?.stato === 'MODIFICATO') && (
+                        {isReadOnly && currentUserRole === 'SPECIALIST' && (dpTesta?.stato === 'CHIUSO' || dpTesta?.stato === 'MODIFICATO') && (
                             <Tooltip title="Riapri il planning per renderlo modificabile">
                                 <span>
-                                    <Button
-                                        variant="contained"
-                                        color="secondary"
-                                        size={isMobile ? "small" : "medium"}
-                                        startIcon={<LockOpenIcon />}
-                                        onClick={handleReopenPlanning}
-                                        disabled={isSaving}
-                                    >
+                                    <Button variant="contained" color="secondary" size={isMobile ? "small" : "medium"} startIcon={<LockOpenIcon />} onClick={handleReopenPlanning} disabled={isSaving}>
                                         Riapri
                                     </Button>
                                 </span>
                             </Tooltip>
                         )}
+
                         {!isReadOnly && (
                             <>
-                            <Tooltip title={ currentUserRole === 'MAGAZZINIERE' ? "Salva le modifiche" : "Salva senza cambiare stato" }>
-                                <span><IconButton type="button" onClick={() => handleSaveAll(false)} color="inherit" size={isMobile ? "small" : "medium"} disabled={!isDirty || isSaving}><SaveIcon /></IconButton></span>
+                            <Tooltip title="Salva bozza">
+                                <span>
+                                    <IconButton type="button" onClick={() => handleSaveAll(false)} color="inherit" size={isMobile ? "small" : "medium"} disabled={!isDirty || isSaving}><SaveIcon /></IconButton>
+                                </span>
                             </Tooltip>
                             
+                            <Tooltip title={getCloseButtonTooltip()}>
+                                <span>
+                                    <IconButton type="button" onClick={() => handleSaveAll(true)} color="inherit" size={isMobile ? "small" : "medium"} disabled={isSaving}><LockIcon /></IconButton>
+                                </span>
+                            </Tooltip>
                             </>
                         )}
-                        {
-                             !isReadOnly && (dpTesta?.stato != 'CHIUSO') && (
-                            <Tooltip title={ dpTesta?.stato === 'NUOVO' || !dpTesta ? "Invia allo SPECIALIST" : "Chiudi e finalizza planning"}>
-                                <span><IconButton type="button" onClick={() => handleSaveAll(true)} color="inherit" size={isMobile ? "small" : "medium"} ><LockIcon /></IconButton></span>
+                        
+                        {currentUserRole === "SPECIALIST" && dpTesta && (dpTesta.stato==="CHIUSO" || dpTesta.stato ==="MODIFICATO") &&  (
+                            <Tooltip title="Scarica il Daily Planning in formato PDF">
+                                <span>
+                                    <Button
+                                        variant="contained" color="secondary" size={isMobile ? "small" : "medium"}
+                                        startIcon={isSaving ? <CircularProgress size={22} color="inherit" /> : <DownloadIcon />}
+                                        onClick={async () => {
+                                            if (!dpTesta) return;
+                                            setIsSaving(true);
+                                            try {
+                                                const blob = await api.getDPPdfReport(dpTesta.id);
+                                                const url = window.URL.createObjectURL(blob);
+                                                const link = document.createElement('a');
+                                                link.href = url;
+                                                let name = new Date(dpTesta.giorno).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                                                let revisione = dpTesta.revisione ? `-Rev${dpTesta.revisione > 0 ? dpTesta.revisione - 1 : 0}` : '';
+                                                link.download = `DP_${name.replace(/\//g, '-')}${revisione}.pdf`;
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                setTimeout(() => { document.body.removeChild(link); window.URL.revokeObjectURL(url); }, 100);
+                                            } catch (err) {
+                                                setPageError("Errore durante il download del PDF.");
+                                            } finally {
+                                                setIsSaving(false);
+                                            }
+                                        }}
+                                        disabled={isSaving}
+                                    >
+                                        {isMobile ? '' : 'Scarica'}
+                                    </Button>
+                                </span>
                             </Tooltip>
-)}
-                        {
-                            currentUserRole === "SPECIALIST" && dpTesta && (
-                                <>
-                                    <Tooltip title="Scarica il Daily Planning in formato PDF">
-                                        <span>
-                                            <Button
-                                                variant="contained"
-                                                color="secondary"
-                                                size={isMobile ? "small" : "medium"}
-                                                startIcon={isSaving ? <CircularProgress size={22} color="inherit" /> : <DownloadIcon />}
-                                                onClick={async () => {
-                                                    setIsSaving(true);
-                                                    try {
-                                                        const blob = await api.getDPPdfReport(dpTesta.id);
-                                                        if (blob instanceof Blob) {
-                                                            const url = window.URL.createObjectURL(blob);
-                                                            const link = document.createElement('a');
-                                                            link.href = url;
-                                                            let name = new Date(dpTesta.giorno).toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-                                                            let revisione = dpTesta.revisione ? `-Rev${dpTesta.revisione > 0 ? dpTesta.revisione - 1 : 0}` : '';
-                                                            link.download = `${name}${revisione}.pdf`;
-                                                            document.body.appendChild(link);
-                                                            link.click();
-                                                            setTimeout(() => {
-                                                                document.body.removeChild(link);
-                                                                window.URL.revokeObjectURL(url);
-                                                            }, 100);
-                                                        }
-                                                    } catch (err) {
-                                                        setPageError("Errore durante il download del PDF.");
-                                                    } finally {
-                                                        setIsSaving(false);
-                                                    }
-                                                }}
-                                                disabled={isSaving}
-                                            >
-                                                Scarica
-                                            </Button>
-                                        </span>
-                                    </Tooltip>
-                                </>
-                            )
-                        }
+                        )}
                     </Stack>
                 </Toolbar>
             </Container>
@@ -1476,39 +1460,19 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     const renderInfoDialog = () => (
         <Dialog open={infoDialogOpen} onClose={handleInfoDialogClose}>
             <DialogTitle>{infoDialogContent.title}</DialogTitle>
-            <DialogContent>
-                <Typography>{infoDialogContent.message}</Typography>
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={handleInfoDialogClose} autoFocus>OK</Button>
-            </DialogActions>
+            <DialogContent><Typography>{infoDialogContent.message}</Typography></DialogContent>
+            <DialogActions><Button onClick={handleInfoDialogClose} autoFocus>OK</Button></DialogActions>
         </Dialog>
     );
 
     const renderConfirmCloseDialog = () => (
-        <Dialog
-            open={confirmCloseOpen}
-            onClose={() => setConfirmCloseOpen(false)}
-            aria-labelledby="confirm-close-dialog-title"
-        >
-            <DialogTitle id="confirm-close-dialog-title">
-                Salvare le modifiche?
-            </DialogTitle>
-            <DialogContent>
-                <Typography>
-                    Ci sono delle modifiche non salvate. Se chiudi ora, le perderai.
-                </Typography>
-            </DialogContent>
+        <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)}>
+            <DialogTitle>Salvare le modifiche?</DialogTitle>
+            <DialogContent><Typography>Ci sono delle modifiche non salvate. Se chiudi ora, le perderai.</Typography></DialogContent>
             <DialogActions>
-                <Button onClick={() => setConfirmCloseOpen(false)}>
-                    Annulla
-                </Button>
-                <Button onClick={handleCloseWithoutSaving} color="error">
-                    Chiudi senza salvare
-                </Button>
-                <Button onClick={handleSaveAndClose} variant="contained" autoFocus>
-                    Salva e Chiudi
-                </Button>
+                <Button onClick={() => setConfirmCloseOpen(false)}>Annulla</Button>
+                <Button onClick={handleCloseWithoutSaving} color="error">Chiudi senza salvare</Button>
+                <Button onClick={handleSaveAndClose} variant="contained" autoFocus>Salva e Chiudi</Button>
             </DialogActions>
         </Dialog>
     );
@@ -1548,37 +1512,21 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                             backgroundColor: isReadOnly ? alpha(theme.palette.grey[500], 0.08) : 'inherit',
                                         }}
                                     >
-                                        <CardActionArea onClick={() => handleCardClick(row)} sx={{ p: 1.5, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }} disabled={isReadOnly}>
+                                        <CardActionArea onClick={() => handleCardClick(row)} sx={{ p: 1.5, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                                             <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: '100%' }}>
-                                                {currentUserRole === 'SPECIALIST' && row.risorsaAssegnata && (
-                                                    <Tooltip title={`Info: ${row.risorsaAssegnata.nome}`}>
-                                                        <IconButton
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleRisorsaAvatarClick(e as unknown as React.MouseEvent<HTMLButtonElement>, row.risorsaAssegnata!);
-                                                            }}
-                                                            sx={{ p: 0 }}
-                                                        >
-                                                            <Avatar
-                                                                sx={{
-                                                                    bgcolor: theme.palette.secondary.main,
-                                                                    color: theme.palette.secondary.contrastText,
-                                                                    width: 36, height: 36, fontSize: '0.9rem',
-                                                                    border: `2px solid ${getStatusColor(row)}`
-                                                                }}
-                                                            >
-                                                                {row.risorsaAssegnata.sigla}
-                                                            </Avatar>
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                )}
-                                                {(currentUserRole !== 'SPECIALIST' || !row.risorsaAssegnata) && (
-                                                    <Avatar sx={{ bgcolor: getStatusColor(row), width: 36, height: 36, fontSize: '0.9rem' }}>
-                                                        {getAvatarLetter(row)}
-                                                    </Avatar>
-                                                )}
-                                                <Box flexGrow={1} sx={{ minWidth: 0 }}>
+                                                <AvatarGroup max={3} sx={{ '& .MuiAvatar-root': { width: 36, height: 36, fontSize: '0.9rem', border: `2px solid ${getStatusColor(row)}` } }}>
+                                                    {row.risorseAssegnate.length > 0 ? (
+                                                        row.risorseAssegnate.map(r => (
+                                                            <Avatar key={r.id} sx={{ bgcolor: theme.palette.secondary.main }}>{r.sigla}</Avatar>
+                                                        ))
+                                                    ) : (
+                                                        <Avatar sx={{ bgcolor: getStatusColor(row) }}>
+                                                            {row.selectedClient ? row.selectedClient.ragioneSociale[0].toUpperCase() : <GroupIcon />}
+                                                        </Avatar>
+                                                    )}
+                                                </AvatarGroup>
+
+                                                <Box flexGrow={1} sx={{ minWidth: 0, ml: row.risorseAssegnate.length > 0 ? 1 : 0 }}>
                                                     <Stack direction="row" alignItems="center" spacing={0.5}>
                                                         {row.zohoEventId && (
                                                             <Tooltip title="Attività sincronizzata da Zoho">
@@ -1586,17 +1534,8 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                                             </Tooltip>
                                                         )}
                                                         <Typography
-                                                            variant="subtitle1"
-                                                            component="div"
-                                                            gutterBottom
-                                                            sx={{
-                                                                fontWeight: 500,
-                                                                lineHeight: 1.3,
-                                                                fontSize: '0.95rem',
-                                                                whiteSpace: 'normal',
-                                                                wordBreak: 'break-word',
-                                                                m:0
-                                                            }}
+                                                            variant="subtitle1" component="div" gutterBottom
+                                                            sx={{ fontWeight: 500, lineHeight: 1.3, fontSize: '0.95rem', whiteSpace: 'normal', wordBreak: 'break-word', m:0 }}
                                                         >
                                                             {row.descrizionemanuale || "Nessuna descrizione"}
                                                         </Typography>
@@ -1610,23 +1549,17 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                             <Stack direction="row" justifyContent="space-around" alignItems="center" spacing={0.5} sx={{ fontSize: '0.7rem', width: '100%' }}>
                                                 <Chip
                                                     icon={<ConstructionIcon sx={{ fontSize: '0.9rem', ml: '2px' }} />}
-                                                    label={`${row.selectedInterventions.length} Interv.`}
-                                                    size="small"
-                                                    variant="outlined"
+                                                    label={`${row.selectedInterventions.length} Interv.`} size="small" variant="outlined"
                                                     sx={{ flex: 1, borderColor: alpha(theme.palette.text.primary, 0.2), color: alpha(theme.palette.text.primary, 0.7) }}
                                                 />
                                                 <Chip
                                                     icon={<AccessTimeIcon sx={{ fontSize: '0.9rem', ml: '2px' }} />}
-                                                    label={row.timeSlot || "N/D"}
-                                                    size="small"
-                                                    variant="outlined"
+                                                    label={row.timeSlot || "N/D"} size="small" variant="outlined"
                                                     sx={{ flex: 1, borderColor: alpha(theme.palette.text.primary, 0.2), color: alpha(theme.palette.text.primary, 0.7) }}
                                                 />
                                                 <Chip
                                                     icon={row.materialAvailable ? <CheckCircleOutlineIcon sx={{ fontSize: '0.9rem', ml: '2px' }} /> : <CategoryIcon sx={{ fontSize: '0.9rem', ml: '2px' }} />}
-                                                    label={row.materialAvailable ? "Mat. OK" : "Ver. Mat."}
-                                                    size="small"
-                                                    color={row.materialAvailable ? "success" : "default"}
+                                                    label={row.materialAvailable ? "Mat. OK" : "Ver. Mat."} size="small" color={row.materialAvailable ? "success" : "default"}
                                                     variant={row.materialAvailable ? "filled" : "outlined"}
                                                     sx={row.materialAvailable ?
                                                         { flex: 1, color: 'common.white', backgroundColor: theme.palette.success.dark } :
@@ -1638,29 +1571,10 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                 ))}
                             </Stack>
                         )}
-
-                        {selectedRisorsaForPopover && (
-                            <Popover
-                                id={risorsaPopoverId}
-                                open={risorsaPopoverOpen}
-                                anchorEl={risorsaPopoverAnchorEl}
-                                onClose={handleRisorsaPopoverClose}
-                                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                                PaperProps={{ elevation: 3, sx: { borderRadius: 1.5, p: 1.5, mt: 0.5, minWidth: 200 } }}
-                            >
-                                <Stack spacing={0.5}>
-                                    <Typography variant="subtitle2" fontWeight="bold">{selectedRisorsaForPopover.nome}</Typography>
-                                    <Chip icon={<BadgeOutlinedIcon fontSize="small" />} label={`Sigla: ${selectedRisorsaForPopover.sigla}`} size="small" variant="outlined" />
-                                </Stack>
-                            </Popover>
-                        )}
-
+                        
                         {currentRowInModal && (
                             <Dialog
-                                open={modalOpen}
-                                onClose={handleCloseModal}
-                                fullScreen
+                                open={modalOpen} onClose={handleCloseModal} fullScreen
                                 PaperProps={{ sx: { m: 0, borderRadius: 0, height: '100%', maxHeight: '100%', overflowY: 'hidden' } }}
                             >
                                 <DialogTitle sx={{ backgroundColor: 'primary.main', color: 'primary.contrastText', p: 1.5, fontSize: '1.1rem', boxShadow: theme.shadows[1] }}>
@@ -1678,10 +1592,11 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                         allClients={clients}
                                         allInterventionTypes={interventionTypes}
                                         allRisorse={risorse}
-                                        userRole={currentUserRole ?? 'SPECIALIST'}
+                                        userRole={currentUserRole}
                                         isMobileModalMode={true}
                                         viewMode="mobile"
                                         isReadOnly={isReadOnly}
+                                        dpStatus={dpTesta?.stato}
                                     />
                                 </DialogContent>
                             </Dialog>
@@ -1700,10 +1615,10 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                     <TableHead>
                                         <TableRow>
                                             <TableCell sx={{ width: 40, p:1 }} />
-                                            {currentUserRole === 'SPECIALIST' && <TableCell sx={{ width: '10%', minWidth: 90 }}>Risorsa</TableCell>}
+                                            {showRisorsaColumn && <TableCell sx={{ width: '25%', minWidth: 150 }}>Risorse</TableCell>}
                                             <TableCell sx={{ width: 'auto', minWidth: 200 }}>Descrizione Attività</TableCell>
                                             <TableCell sx={{ width: '35%', minWidth: 200 }}>Cliente</TableCell>
-                                            <TableCell align="center" sx={{ width: '15%', minWidth: 120 }}>Interventi</TableCell>
+                                            <TableCell align="center" sx={{ width: '10%', minWidth: 120 }}>Interventi</TableCell>
                                             <TableCell align="right" sx={{ width: 40, p:1 }} />
                                         </TableRow>
                                     </TableHead>
@@ -1717,14 +1632,14 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                                 allClients={clients}
                                                 allInterventionTypes={interventionTypes}
                                                 allRisorse={risorse}
-                                                userRole={currentUserRole ?? 'SPECIALIST'}
+                                                userRole={currentUserRole}
                                                 viewMode={isTablet ? 'tablet' : 'desktop'}
-                                                onRisorsaAvatarClick={handleRisorsaAvatarClick}
                                                 isReadOnly={isReadOnly}
+                                                dpStatus={dpTesta?.stato}
                                             />
                                         )) : (
                                             <TableRow>
-                                                <TableCell colSpan={currentUserRole === 'SPECIALIST' ? 6 : 5} sx={{ textAlign: 'center', py: 8 }}>
+                                                <TableCell colSpan={showRisorsaColumn ? 6 : 5} sx={{ textAlign: 'center', py: 8 }}>
                                                     <SearchIcon sx={{ fontSize: 50, color: 'text.disabled', mb: 2 }} />
                                                     <Typography variant="h6" sx={{ color: 'text.secondary', mb: 1 }}>Nessuna attività pianificata.</Typography>
                                                     {!isReadOnly && (
@@ -1739,22 +1654,6 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                 </Table>
                             </TableContainer>
                         </Paper>
-                        {selectedRisorsaForPopover && (
-                            <Popover
-                                id={risorsaPopoverId}
-                                open={risorsaPopoverOpen}
-                                anchorEl={risorsaPopoverAnchorEl}
-                                onClose={handleRisorsaPopoverClose}
-                                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                                PaperProps={{ elevation: 3, sx: { borderRadius: 1.5, p: 1.5, mt: 0.5, minWidth: 200 } }}
-                            >
-                                <Stack spacing={0.5}>
-                                    <Typography variant="subtitle2" fontWeight="bold">{selectedRisorsaForPopover.nome}</Typography>
-                                    <Chip icon={<BadgeOutlinedIcon fontSize="small" />} label={`Sigla: ${selectedRisorsaForPopover.sigla}`} size="small" variant="outlined" />
-                                </Stack>
-                            </Popover>
-                        )}
                         {!isReadOnly && (
                             <Fab component="button" type="button" color="primary" aria-label="add" onClick={addNewRow} sx={{ position: 'fixed', bottom: { xs: 24, sm: 32 }, right: { xs: 24, sm: 32 }, transform: 'scale(1.1)' }}>
                                 <AddIcon />

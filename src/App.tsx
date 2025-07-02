@@ -39,7 +39,7 @@ const AppRoutes: React.FC = () => {
       {/* Rotte protette */}
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
-          <Route path="/" element={<DailyPlanningPage />} />
+          <Route path="/daily-planning" element={<DailyPlanningPage />} />
           {/* Aggiungi qui le altre tue pagine protette */}
           {/* <Route path="/gestione-clienti" element={<GestioneClientiPage />} />
           <Route path="/gestione-interventi" element={<GestioneInterventiPage />} />
@@ -48,7 +48,7 @@ const AppRoutes: React.FC = () => {
       </Route>
 
       {/* Se nessuna rotta corrisponde, reindirizza alla root */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/daily-planning" replace />} />
     </Routes>
   );
 }

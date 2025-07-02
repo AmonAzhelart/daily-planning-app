@@ -38,44 +38,51 @@ modifiedby?: string;
 details?: DPDetailUpdate[];
 }
 
+export interface OauthUserResponse {
+    username: string;
+    first_name: string | null;
+    last_name: string | null;
+    role: Role | null;
+}
+
 export interface DPDetail {
-id: number;
-id_testata: number;
-caluid: string | null;
-id_sede: number | null;
-id_agpspm: string | null;
-note: string | null;
-fasciaoraria: FasciaOraria;
-materialedisponibile: MaterialeDisponibile;
-created: string;
-createdby: string;
-modified: string;
-modifiedby: string;
-descrizionemanuale?: string | null;
+    id: number;
+    id_testata: number;
+    caluid: string | null;
+    id_sede: number | null;
+    note: string | null;
+    fasciaoraria: FasciaOraria;
+    materialedisponibile: MaterialeDisponibile;
+    created: string;
+    createdby: string;
+    modified: string;
+    modifiedby: string;
+    descrizionemanuale?: string | null;
+    agpspm_users: OauthUserResponse[]; // MODIFICATO: Array di oggetti utente
 }
 
 export interface DPDetailCreate {
-id_testata: number;
-caluid?: string | null;
-id_sede?: number | null;
-id_agpspm?: string | null;
-note?: string | null;
-fasciaoraria: FasciaOraria;
-materialedisponibile: MaterialeDisponibile;
-createdby?: string;
-modifiedby?: string;
-descrizionemanuale?: string | null;
+    id_testata: number;
+    caluid?: string | null;
+    id_sede?: number | null;
+    agpspm_users?: string[]; // MODIFICATO: Array di username
+    note?: string | null;
+    fasciaoraria: FasciaOraria;
+    materialedisponibile: MaterialeDisponibile;
+    createdby?: string;
+    modifiedby?: string;
+    descrizionemanuale?: string | null;
 }
 
 export interface DPDetailUpdate {
-caluid?: string | null;
-id_sede?: number | null;
-id_agpspm?: string | null;
-note?: string | null;
-fasciaoraria?: FasciaOraria;
-materialedisponibile?: MaterialeDisponibile;
-modifiedby?: string;
-descrizionemanuale?: string | null;
+    caluid?: string | null;
+    id_sede?: number | null;
+    agpspm_users?: string[]; // MODIFICATO: Array di username
+    note?: string | null;
+    fasciaoraria?: FasciaOraria;
+    materialedisponibile?: MaterialeDisponibile;
+    modifiedby?: string;
+    descrizionemanuale?: string | null;
 }
 
 export interface DPDetailTI {
@@ -247,6 +254,7 @@ const getDPPdfReport = useCallback(async (dpTestaId: number) => {
 const getUserInfo = useCallback((username: string) => wrappedApiCall<UserInfo>(`/auth/user/${username}`, 'GET'), [wrappedApiCall]);
 
 const getUrlMainApp = useCallback(() => wrappedApiCall<any>(`/dp_utility/get_url_mainApp`, 'GET'), [wrappedApiCall]);
+const logout = useCallback(() => wrappedApiCall<any>(`/auth/logout`, 'POST'), [wrappedApiCall]);
 
 return {
  loading,
@@ -274,6 +282,7 @@ return {
  getInterventionsByPeriodReport,
  getUserInfo,
  getDPPdfReport,
- getUrlMainApp
+ getUrlMainApp,
+ logout
 };
 };
