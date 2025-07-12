@@ -10,6 +10,8 @@ import MainLayout from './components/MainLayout';
 import { useAuth, AuthProvider } from './context/AuthContenxt';
 import DailyPlanningPage from './pages/DailyPlanningPage';
 import LoginPage from './pages/LoginPage';
+import ManagementPage from './pages/ManagementPage';
+import ReportsAndStatisticsPage from './pages/StatisticsPage';
 
 // Componente per proteggere le rotte che richiedono autenticazione
 const ProtectedRoute: React.FC = () => {
@@ -35,11 +37,13 @@ const AppRoutes: React.FC = () => {
       {/* Rotte pubbliche */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
-      
+
       {/* Rotte protette */}
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
           <Route path="/daily-planning" element={<DailyPlanningPage />} />
+          <Route path="/management" element={<ManagementPage />} />
+          <Route path="/statistics" element={<ReportsAndStatisticsPage />} />
           {/* Aggiungi qui le altre tue pagine protette */}
           {/* <Route path="/gestione-clienti" element={<GestioneClientiPage />} />
           <Route path="/gestione-interventi" element={<GestioneInterventiPage />} />

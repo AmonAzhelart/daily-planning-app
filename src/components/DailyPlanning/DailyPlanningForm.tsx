@@ -90,6 +90,7 @@ export interface DailyPlanningDetailRow {
     isNew?: boolean;
     zohoEventId: string | null;
     zohoOriginalTitle: string;
+    zohoEventColor?: string; // NUOVO: Colore evento Zoho
     descrizionemanuale: string;
     selectedClient: Client | null;
     risorseAssegnate: Risorsa[]; // MODIFICATO: da singola a multipla
@@ -223,7 +224,7 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                 : ''
         );
     }, [initialRowData.selectedClient]);
-    
+
     // Popover Handlers
     const handleRisorsePopoverOpen = (event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
@@ -288,12 +289,12 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
         if (!interventionType) return;
         const existing = localRowData.selectedInterventions.find(si => si.interventionTypeId === interventionType.id);
         if (existing) {
-             const newInterventions = localRowData.selectedInterventions.map(si =>
+            const newInterventions = localRowData.selectedInterventions.map(si =>
                 si.interventionTypeId === interventionType.id ? { ...si, quantity: si.quantity + 1 } : si
             );
             handleFieldChange('selectedInterventions', newInterventions);
         } else {
-             const newInterventions = [
+            const newInterventions = [
                 ...localRowData.selectedInterventions,
                 { id: undefined, interventionTypeId: interventionType.id, interventionTypeName: interventionType.name, quantity: 1 },
             ];
@@ -327,7 +328,7 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                         </Tooltip>
                     )}
                 </Stack>
-                
+
                 <TextField
                     fullWidth
                     label="Descrizione (modificabile)"
@@ -342,7 +343,10 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                 />
 
                 {localRowData.zohoEventId && (
-                    <Box mt={2} p={1.5} bgcolor={alpha(theme.palette.grey[500], 0.1)} borderRadius={1}>
+                    <Box mt={2} p={1.5} bgcolor={alpha(theme.palette.grey[500], 0.1)} borderRadius={1}
+                        // MODIFICA: Aggiunto bordo laterale colorato
+                        sx={{ borderLeft: `4px solid ${localRowData.zohoEventColor || theme.palette.divider}` }}
+                    >
                         <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
                             Titolo Originale da Zoho (non modificabile)
                         </Typography>
@@ -371,10 +375,10 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                             onChange={handleRisorseChange}
                             isOptionEqualToValue={(option, value) => option.id === value.id}
                             renderInput={(params) => (
-                                <TextField 
-                                    {...params} 
-                                    label="Risorse Assegnate" 
-                                    variant="outlined" 
+                                <TextField
+                                    {...params}
+                                    label="Risorse Assegnate"
+                                    variant="outlined"
                                     size="small"
                                 />
                             )}
@@ -554,7 +558,7 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                 <TextField
                     fullWidth
                     disabled={isReadOnly}
-                    value={localRowData.notes} 
+                    value={localRowData.notes}
                     onChange={(e) => handleFieldChange('notes', e.target.value)}
                     multiline minRows={3} maxRows={5} variant="outlined" size="small" placeholder={isReadOnly ? "Planning bloccato." : "Inserisci eventuali dettagli..."}
                 />
@@ -627,8 +631,8 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                                                 avatar={<Avatar sx={{ width: 22, height: 22, fontSize: '0.7rem' }}>{risorsa.sigla}</Avatar>}
                                                 label={risorsa.sigla}
                                                 size="small"
-                                                sx={{ 
-                                                    bgcolor: theme.palette.secondary.dark, 
+                                                sx={{
+                                                    bgcolor: theme.palette.secondary.dark,
                                                     color: theme.palette.common.white,
                                                     m: '2px'
                                                 }}
@@ -675,15 +679,16 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                         )}
                     </TableCell>
                 )}
-                
+
                 <TableCell sx={{ wordBreak: 'break-word' }}>
-                     <Stack direction="row" alignItems="center" spacing={0.5}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
                         {localRowData.zohoEventId && (
-                            <Tooltip title="Attività sincronizzata da Zoho">
-                                <CloudQueueIcon
-                                    color="action"
-                                    sx={{ fontSize: '1rem', mr: 0.5, opacity: 0.7 }}
-                                />
+                            <Tooltip title={`Evento Zoho - Colore: ${localRowData.zohoEventColor || 'Default'}`}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <CloudQueueIcon color="action" sx={{ fontSize: '1rem', opacity: 0.7 }} />
+                                    {/* MODIFICA: Aggiunto indicatore colore */}
+                                    <FiberManualRecordIcon sx={{ fontSize: '0.8rem', color: localRowData.zohoEventColor || '#01a0b9' }} />
+                                </Box>
                             </Tooltip>
                         )}
                         <Tooltip title={`Titolo Originale: ${localRowData.zohoOriginalTitle || 'N/A'}`} placement="top-start">
@@ -733,14 +738,14 @@ const CollapsibleTableRow: React.FC<CollapsibleTableRowProps> = React.memo(({
                             disabled={localRowData.selectedInterventions.length === 0}
                             color={localRowData.selectedInterventions.length > 0 ? "primary" : "default"}
                             variant={localRowData.selectedInterventions.length > 0 ? "filled" : "outlined"}
-                            sx={{ 
-                                ...(localRowData.selectedInterventions.length > 0 && { 
-                                    backgroundColor: 'primary.dark', 
+                            sx={{
+                                ...(localRowData.selectedInterventions.length > 0 && {
+                                    backgroundColor: 'primary.dark',
                                     color: 'common.white',
                                     cursor: 'pointer'
                                 }),
-                                ...(localRowData.selectedInterventions.length === 0 && { 
-                                    borderColor: alpha(theme.palette.common.black, 0.23) 
+                                ...(localRowData.selectedInterventions.length === 0 && {
+                                    borderColor: alpha(theme.palette.common.black, 0.23)
                                 })
                             }}
                         />
@@ -811,16 +816,16 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'lg'));
-    
+
     const { user } = useAuth();
-    const userInfo = user ;
+    const userInfo = user;
     const currentUserRole = user?.role?.name || 'SPECIALIST';
 
     const api = useDailyPlanningApi();
     const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [pageError, setPageError] = useState<string | null>(null);
-    
+
     const [zohoAuthUrl, setZohoAuthUrl] = useState<string | null>(null);
 
     const [dpRows, setDpRows] = useState<DailyPlanningDetailRow[]>([]);
@@ -837,13 +842,13 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
 
     const [infoDialogOpen, setInfoDialogOpen] = useState(false);
     const [infoDialogContent, setInfoDialogContent] = useState({ title: '', message: '' });
-    
+
     const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
     const showRisorsaColumn = useMemo(() => {
         return currentUserRole === 'SPECIALIST' && dpTesta?.stato && dpTesta.stato !== 'NUOVO';
     }, [currentUserRole, dpTesta]);
-    
+
     useEffect(() => {
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
             if (isDirty) {
@@ -924,14 +929,15 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 return {
                     id: detail.id, isNew: false, zohoEventId: detail.caluid,
                     zohoOriginalTitle: originalTitle,
+                    zohoEventColor: matchingZohoEvent?.color, // MODIFICA: Passa il colore
                     descrizionemanuale: detail.descrizionemanuale || originalTitle,
-                    selectedClient: client, 
+                    selectedClient: client,
                     risorseAssegnate: detailRisorse,
                     selectedInterventions: mappedInterventions, notes: detail.note || '',
                     timeSlot: detail.fasciaoraria, materialAvailable: detail.materialedisponibile === 'SI',
                 };
             };
-            
+
             const mapDbDetailsToRows = (details: DPDetail[]): Promise<DailyPlanningDetailRow[]> => {
                 return Promise.all(details.map(mapSingleDetailToRow));
             };
@@ -944,7 +950,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 if (currentDpTesta.stato === 'NUOVO') {
                     // Costruisci una mappa dei dettagli esistenti per un accesso rapido
                     const dbDetailsMapByCaluid = new Map(currentDpDetails.filter(d => d.caluid).map(detail => [detail.caluid, detail]));
-                    
+
                     // Mappa tutti gli eventi Zoho e i dettagli manuali in un unico array iniziale
                     const allDetailsPromises = zohoEventsFromApi.map(zohoEvent => {
                         const existingDetail = dbDetailsMapByCaluid.get(zohoEvent.caluid);
@@ -954,7 +960,9 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                             const originalTitle = zohoEvent.title || zohoEvent.description || 'Nuova Attività Zoho';
                             return Promise.resolve({
                                 id: uuidv4(), isNew: true, zohoEventId: zohoEvent.caluid,
-                                zohoOriginalTitle: originalTitle, descrizionemanuale: originalTitle,
+                                zohoOriginalTitle: originalTitle,
+                                zohoEventColor: zohoEvent.color, // MODIFICA: Passa il colore
+                                descrizionemanuale: originalTitle,
                                 selectedClient: null, risorseAssegnate: [], selectedInterventions: [],
                                 notes: zohoEvent.note || '', timeSlot: zohoEvent.fasciaoraria || '',
                                 materialAvailable: zohoEvent.materialedisponibile === 'SI',
@@ -965,7 +973,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                     const zohoEventCaluids = new Set(zohoEventsFromApi.map(e => e.caluid));
                     const manualDetails = currentDpDetails.filter(d => !d.caluid || !zohoEventCaluids.has(d.caluid));
                     manualDetails.forEach(manualDetail => allDetailsPromises.push(mapSingleDetailToRow(manualDetail)));
-                    
+
                     const initialRows = await Promise.all(allDetailsPromises);
 
                     // --- LOGICA DI ORDINAMENTO AVANZATA ---
@@ -996,11 +1004,11 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                 return aIndex - bIndex;
                             }
                         }
-                        
+
                         // 4. Per le manuali o in caso di fallback, non cambiare l'ordine relativo
                         return 0;
                     });
-                    
+
                     processedRows = initialRows;
 
                     if (initialRows.some(r => r.isNew)) {
@@ -1018,8 +1026,10 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                     const originalTitle = zohoEvent.title || zohoEvent.description || 'Nuova Attività Zoho';
                     return {
                         id: uuidv4(), isNew: true, zohoEventId: zohoEvent.caluid,
-                        zohoOriginalTitle: originalTitle, descrizionemanuale: originalTitle,
-                        selectedClient: null, 
+                        zohoOriginalTitle: originalTitle,
+                        zohoEventColor: zohoEvent.color, // MODIFICA: Passa il colore
+                        descrizionemanuale: originalTitle,
+                        selectedClient: null,
                         risorseAssegnate: [],
                         selectedInterventions: [],
                         notes: zohoEvent.note || '', timeSlot: zohoEvent.fasciaoraria || '',
@@ -1029,11 +1039,11 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 setDpRows(newZohoRows);
                 if (newZohoRows.length > 0) setIsDirty(true);
             }
-            
+
             if (currentDpTesta) {
                 const { stato } = currentDpTesta;
                 let readOnly = false;
-                
+
                 const planningDate = new Date(currentDpTesta.giorno);
                 planningDate.setHours(0, 0, 0, 0);
                 const today = new Date();
@@ -1052,7 +1062,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             } else {
                 setIsReadOnly(false);
             }
-            
+
             setIsDirty(false);
 
         } catch (err: any) {
@@ -1065,7 +1075,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                     if (authResponse && authResponse.auth_url) {
                         setZohoAuthUrl(authResponse.auth_url);
                     } else {
-                         setPageError("Impossibile ottenere l'URL di autenticazione da Zoho. Contattare l'assistenza.");
+                        setPageError("Impossibile ottenere l'URL di autenticazione da Zoho. Contattare l'assistenza.");
                     }
                 } catch (authError) {
                     console.error("Errore durante l'avvio dell'autenticazione Zoho:", authError);
@@ -1124,7 +1134,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         if (isReadOnly) return;
         const rowToDelete = dpRows.find(r => r.id === rowIdToDelete);
         setDpRows(prevRows => prevRows.filter(row => row.id !== rowIdToDelete));
-        
+
         if (rowToDelete && !rowToDelete.isNew) {
             try {
                 await api.deleteDPDetail(Number(rowIdToDelete));
@@ -1139,17 +1149,17 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         }
     }, [api, dpRows, isReadOnly]);
 
-   const handleSaveAll = useCallback(async (isClosingAction: boolean): Promise<boolean> => {
+    const handleSaveAll = useCallback(async (isClosingAction: boolean): Promise<boolean> => {
         if (isReadOnly) {
             setPageError("Il planning è in modalità sola lettura.");
             return false;
         }
-        
+
         setIsSaving(true);
         setPageError(null);
-    
+
         let testaToProcess: DPTesta | null = dpTesta;
-    
+
         try {
             if (!testaToProcess) {
                 if (!targetDate) {
@@ -1165,19 +1175,19 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                 testaToProcess = await api.createDPTesta(newDpTestaData);
                 setDpTesta(testaToProcess);
             }
-    
+
             if (!testaToProcess) {
                 throw new Error("Impossibile creare o recuperare la testata del planning.");
             }
-    
+
             let nextState = testaToProcess.stato;
             let infoMessage = "Bozza del planning salvata con successo!";
-    
+
             if (isClosingAction) {
                 if ((currentUserRole === 'MAGAZZINIERE' || currentUserRole === 'SPECIALIST') && testaToProcess.stato === 'NUOVO') {
                     nextState = 'APERTO';
                     infoMessage = "Planning aggiornato allo stato 'APERTO' e pronto per la gestione.";
-                } 
+                }
                 else if (currentUserRole === 'SPECIALIST' && testaToProcess.stato === 'APERTO') {
                     const isModified = testaToProcess.revisione ? testaToProcess.revisione > 0 : false;
                     if (!isModified) {
@@ -1189,7 +1199,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                     }
                 }
             }
-            
+
             const updatePayload: DPTestaUpdate = {
                 stato: nextState,
                 modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}`,
@@ -1208,17 +1218,17 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                     }))
                 }))
             };
-    
+
             await api.updateDPTesta(testaToProcess.id, updatePayload);
-            
+
             await loadPlanningData(testaToProcess.id);
-            
+
             setIsDirty(false);
             setInfoDialogContent({ title: "Operazione completata", message: infoMessage });
             setInfoDialogOpen(true);
 
             return true;
-    
+
         } catch (err: any) {
             console.error("Errore durante il salvataggio:", err);
             setPageError(`Errore salvataggio: ${err.message || 'Errore sconosciuto'}`);
@@ -1227,7 +1237,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             setIsSaving(false);
         }
     }, [dpTesta, dpRows, api, currentUserRole, targetDate, userInfo, isReadOnly, loadPlanningData]);
-    
+
     const handleSaveDraft = useCallback(async () => {
         await handleSaveAll(false);
     }, [handleSaveAll]);
@@ -1263,16 +1273,15 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
 
         setIsSaving(true);
         try {
-            await api.updateDPTesta(dpTesta.id, { 
-                stato: 'APERTO', 
+            await api.updateDPTesta(dpTesta.id, {
+                stato: 'APERTO',
                 modifiedby: `${userInfo?.first_name} ${userInfo?.last_name}`,
             });
 
             await loadPlanningData(dpTesta.id);
             setInfoDialogContent({ title: "Planning Riaperto", message: "Il planning è stato sbloccato ed è ora modificabile." });
             setInfoDialogOpen(true);
-        } catch (err: any)
-        {
+        } catch (err: any) {
             console.error("Errore durante la riapertura:", err);
             setPageError(`Impossibile riaprire il planning: ${err.message || 'Errore sconosciuto'}`);
         } finally {
@@ -1294,7 +1303,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
         setModalOpen(false);
         setCurrentRowInModal(null);
     };
-    
+
     const handleInfoDialogClose = () => {
         setInfoDialogOpen(false);
     };
@@ -1322,7 +1331,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             }
         }, 1000);
     };
-    
+
     const isCardRowComplete = (row: DailyPlanningDetailRow) => {
         if (currentUserRole === 'SPECIALIST') {
             return !!(row.risorseAssegnate.length > 0 && row.selectedClient && row.selectedInterventions.length > 0 && row.timeSlot);
@@ -1345,7 +1354,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
     if (zohoAuthUrl) {
         return (
             <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p: 3, height: '100%' }}>
-                <Paper elevation={3} sx={{ p: {xs: 2, sm: 4}, textAlign: 'center', maxWidth: 480, m: 2, borderRadius: 2 }}>
+                <Paper elevation={3} sx={{ p: { xs: 2, sm: 4 }, textAlign: 'center', maxWidth: 480, m: 2, borderRadius: 2 }}>
                     <SyncLockIcon color="error" sx={{ fontSize: 48, mb: 2 }} />
                     <Typography variant="h6" component="h2" gutterBottom fontWeight="bold">Autenticazione Richiesta</Typography>
                     <Typography sx={{ my: 2, color: 'text.secondary' }}>
@@ -1356,13 +1365,13 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             </Box>
         );
     }
-    
+
     if (isLoadingInitialData) {
-        return <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p:3, height: '100%' }}><CircularProgress size={50} thickness={4} /><Typography variant="h6" sx={{ mt: 2.5, color: 'text.secondary' }}>Caricamento Dati...</Typography></Box>;
+        return <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p: 3, height: '100%' }}><CircularProgress size={50} thickness={4} /><Typography variant="h6" sx={{ mt: 2.5, color: 'text.secondary' }}>Caricamento Dati...</Typography></Box>;
     }
-    
+
     if (pageError) {
-         return <Box sx={{ p: 3 }}><Alert severity="error" variant="filled" onClose={() => setPageError(null)}>{pageError}</Alert></Box>;
+        return <Box sx={{ p: 3 }}><Alert severity="error" variant="filled" onClose={() => setPageError(null)}>{pageError}</Alert></Box>;
     }
 
     const renderAppBar = () => (
@@ -1385,12 +1394,12 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
 
                     <Stack direction="row" spacing={1} alignItems="center">
                         {isDirty && !isReadOnly && (
-                            <Chip 
+                            <Chip
                                 label="Non Salvato" size="small" variant="outlined"
                                 sx={{ color: 'warning.light', borderColor: 'warning.light', animation: `${pulseAnimation} 2s infinite`, fontWeight: 'medium', height: 24 }}
                             />
                         )}
-                        
+
                         {isReadOnly && currentUserRole === 'SPECIALIST' && (dpTesta?.stato === 'CHIUSO' || dpTesta?.stato === 'MODIFICATO') && (
                             <Tooltip title="Riapri il planning per renderlo modificabile">
                                 <span>
@@ -1403,21 +1412,21 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
 
                         {!isReadOnly && (
                             <>
-                            <Tooltip title="Salva bozza">
-                                <span>
-                                    <IconButton type="button" onClick={() => handleSaveAll(false)} color="inherit" size={isMobile ? "small" : "medium"} disabled={!isDirty || isSaving}><SaveIcon /></IconButton>
-                                </span>
-                            </Tooltip>
-                            
-                            <Tooltip title={getCloseButtonTooltip()}>
-                                <span>
-                                    <IconButton type="button" onClick={() => handleSaveAll(true)} color="inherit" size={isMobile ? "small" : "medium"} disabled={isSaving}><LockIcon /></IconButton>
-                                </span>
-                            </Tooltip>
+                                <Tooltip title="Salva bozza">
+                                    <span>
+                                        <IconButton type="button" onClick={() => handleSaveAll(false)} color="inherit" size={isMobile ? "small" : "medium"} disabled={!isDirty || isSaving}><SaveIcon /></IconButton>
+                                    </span>
+                                </Tooltip>
+
+                                <Tooltip title={getCloseButtonTooltip()}>
+                                    <span>
+                                        <IconButton type="button" onClick={() => handleSaveAll(true)} color="inherit" size={isMobile ? "small" : "medium"} disabled={isSaving}><LockIcon /></IconButton>
+                                    </span>
+                                </Tooltip>
                             </>
                         )}
-                        
-                        {currentUserRole === "SPECIALIST" && dpTesta && (dpTesta.stato==="CHIUSO" || dpTesta.stato ==="MODIFICATO") &&  (
+
+                        {currentUserRole === "SPECIALIST" && dpTesta && (dpTesta.stato === "CHIUSO" || dpTesta.stato === "MODIFICATO") && (
                             <Tooltip title="Scarica il Daily Planning in formato PDF">
                                 <span>
                                     <Button
@@ -1456,7 +1465,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
             {isSaving && <LinearProgress color="secondary" />}
         </AppBar>
     );
-    
+
     const renderInfoDialog = () => (
         <Dialog open={infoDialogOpen} onClose={handleInfoDialogClose}>
             <DialogTitle>{infoDialogContent.title}</DialogTitle>
@@ -1494,7 +1503,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                 <Typography variant="h6" sx={{ color: 'text.secondary', mb: 1 }}>Nessuna attività per oggi.</Typography>
                                 <Typography variant="body2" sx={{ color: 'text.disabled', mb: 2.5 }}>Aggiungi la prima attività!</Typography>
                                 {!isReadOnly && (
-                                  <Button type="button" variant="outlined" startIcon={<AddIcon />} onClick={addNewRow}>Aggiungi Nuova Attività</Button>
+                                    <Button type="button" variant="outlined" startIcon={<AddIcon />} onClick={addNewRow}>Aggiungi Nuova Attività</Button>
                                 )}
                             </Paper>
                         ) : (
@@ -1529,13 +1538,17 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                                 <Box flexGrow={1} sx={{ minWidth: 0, ml: row.risorseAssegnate.length > 0 ? 1 : 0 }}>
                                                     <Stack direction="row" alignItems="center" spacing={0.5}>
                                                         {row.zohoEventId && (
-                                                            <Tooltip title="Attività sincronizzata da Zoho">
-                                                                <CloudQueueIcon color="action" sx={{ fontSize: '1rem', opacity: 0.7 }} />
+                                                            <Tooltip title={`Evento Zoho - Colore: ${row.zohoEventColor || 'Default'}`}>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <CloudQueueIcon color="action" sx={{ fontSize: '1rem', opacity: 0.7 }} />
+                                                                    {/* MODIFICA: Aggiunto indicatore colore */}
+                                                                    <FiberManualRecordIcon sx={{ fontSize: '0.7rem', color: row.zohoEventColor || 'action.disabled' }} />
+                                                                </Box>
                                                             </Tooltip>
                                                         )}
                                                         <Typography
                                                             variant="subtitle1" component="div" gutterBottom
-                                                            sx={{ fontWeight: 500, lineHeight: 1.3, fontSize: '0.95rem', whiteSpace: 'normal', wordBreak: 'break-word', m:0 }}
+                                                            sx={{ fontWeight: 500, lineHeight: 1.3, fontSize: '0.95rem', whiteSpace: 'normal', wordBreak: 'break-word', m: 0 }}
                                                         >
                                                             {row.descrizionemanuale || "Nessuna descrizione"}
                                                         </Typography>
@@ -1571,7 +1584,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                 ))}
                             </Stack>
                         )}
-                        
+
                         {currentRowInModal && (
                             <Dialog
                                 open={modalOpen} onClose={handleCloseModal} fullScreen
@@ -1602,7 +1615,7 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                             </Dialog>
                         )}
                         {!isReadOnly && (
-                          <Fab component="button" type="button" color="secondary" aria-label="add" onClick={addNewRow} sx={{ position: 'fixed', bottom: 16, right: 16, boxShadow: theme.shadows[6] }}>
+                            <Fab component="button" type="button" color="secondary" aria-label="add" onClick={addNewRow} sx={{ position: 'fixed', bottom: 16, right: 16, boxShadow: theme.shadows[6] }}>
                                 <AddIcon />
                             </Fab>
                         )}
@@ -1614,12 +1627,12 @@ const DailyPlanningForm = forwardRef<DailyPlanningFormRef, DailyPlanningFormProp
                                 <Table stickyHeader>
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell sx={{ width: 40, p:1 }} />
+                                            <TableCell sx={{ width: 40, p: 1 }} />
                                             {showRisorsaColumn && <TableCell sx={{ width: '25%', minWidth: 150 }}>Risorse</TableCell>}
                                             <TableCell sx={{ width: 'auto', minWidth: 200 }}>Descrizione Attività</TableCell>
                                             <TableCell sx={{ width: '35%', minWidth: 200 }}>Cliente</TableCell>
                                             <TableCell align="center" sx={{ width: '10%', minWidth: 120 }}>Interventi</TableCell>
-                                            <TableCell align="right" sx={{ width: 40, p:1 }} />
+                                            <TableCell align="right" sx={{ width: 40, p: 1 }} />
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
