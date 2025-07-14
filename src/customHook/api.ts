@@ -126,6 +126,7 @@ export interface Role {
     id: number;
     name: string;
     description: string | null;
+    priority: number;
 }
 
 export interface UserInfo {
@@ -133,6 +134,7 @@ export interface UserInfo {
     first_name: string | null;
     last_name: string | null;
     role: Role;
+
 }
 
 /**

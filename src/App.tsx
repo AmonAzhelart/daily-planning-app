@@ -2,22 +2,21 @@ import React from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, Outlet } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 
-// Importa i componenti e le pagine con percorsi assoluti dalla root 'src'
-
+// Importa i componenti e le pagine
 import './App.css';
 import AuthCallback from './components/AuthCallback';
 import MainLayout from './components/MainLayout';
+import PriorityRoute from './components/PriorityRoute'; // <-- NUOVO: Importa il guardiano di priorità
 import { useAuth, AuthProvider } from './context/AuthContenxt';
 import DailyPlanningPage from './pages/DailyPlanningPage';
 import LoginPage from './pages/LoginPage';
 import ManagementPage from './pages/ManagementPage';
 import ReportsAndStatisticsPage from './pages/StatisticsPage';
 
-// Componente per proteggere le rotte che richiedono autenticazione
+// Componente per proteggere le rotte che richiedono solo l'autenticazione (login)
 const ProtectedRoute: React.FC = () => {
   const { isLoggedIn, isLoading } = useAuth();
 
-  // Se stiamo ancora verificando lo stato, mostriamo un loader
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -26,7 +25,7 @@ const ProtectedRoute: React.FC = () => {
     );
   }
 
-  // Se l'utente non è loggato, lo reindirizziamo alla pagina di login
+  // Se l'utente è loggato, mostra il contenuto (che sarà il MainLayout), altrimenti vai al login
   return isLoggedIn ? <Outlet /> : <Navigate to="/login" replace />;
 };
 
@@ -38,20 +37,33 @@ const AppRoutes: React.FC = () => {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
 
-      {/* Rotte protette */}
+      {/* Rotte protette dal login */}
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
+          {/* Questa rotta è accessibile a TUTTI gli utenti loggati */}
           <Route path="/daily-planning" element={<DailyPlanningPage />} />
-          <Route path="/management" element={<ManagementPage />} />
-          <Route path="/statistics" element={<ReportsAndStatisticsPage />} />
-          {/* Aggiungi qui le altre tue pagine protette */}
-          {/* <Route path="/gestione-clienti" element={<GestioneClientiPage />} />
-          <Route path="/gestione-interventi" element={<GestioneInterventiPage />} />
-          */}
+
+          {/* **[CORREZIONE]** Queste rotte sono protette anche dalla priorità */}
+          <Route
+            path="/management"
+            element={
+              <PriorityRoute requiredPriority={2}>
+                <ManagementPage />
+              </PriorityRoute>
+            }
+          />
+          <Route
+            path="/statistics"
+            element={
+              <PriorityRoute requiredPriority={2}>
+                <ReportsAndStatisticsPage />
+              </PriorityRoute>
+            }
+          />
         </Route>
       </Route>
 
-      {/* Se nessuna rotta corrisponde, reindirizza alla root */}
+      {/* Se nessuna rotta corrisponde, reindirizza alla pagina di default */}
       <Route path="*" element={<Navigate to="/daily-planning" replace />} />
     </Routes>
   );

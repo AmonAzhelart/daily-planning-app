@@ -1,47 +1,36 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-
-// MUI Imports
 import {
     Container, Typography, Paper, Box, Button, Chip, IconButton, AppBar,
     Toolbar, Tooltip, alpha, useTheme, Grid, Skeleton, Alert,
     Stack, Fade, Drawer
 } from '@mui/material';
-
-// MUI Icon Imports
 import {
     Event as EventIcon, Add as AddIcon, FiberManualRecord as FiberManualRecordIcon,
     ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Create as CreateIcon,
     Edit as EditIcon, ArrowForward as ArrowForwardIcon, Lock as LockIcon,
     LockOpen as LockOpenIcon, Close as CloseIcon
 } from '@mui/icons-material';
-
 import { useDailyPlanningApi, DPTesta, DPStatus, UserInfo } from '../customHook/api';
-
-// --- Import del form e del nuovo tipo per il Ref ---
 import DailyPlanningForm, { DailyPlanningFormRef } from '../components/DailyPlanning/DailyPlanningForm';
 import { useAuth } from '../context/AuthContenxt';
 
-// #region Type Definitions
+// --- Type Definitions and Helper Functions (invariate) ---
 interface DailyPlanningSummary {
-  id: number;
-  giorno: string;
-  stato: DPStatus;
-  revisione: number;
-  isLocked: boolean;
-  createdby: string;
-  created_at: string;
-  modifiedby: string;
-  modified_at: string;
+    id: number;
+    giorno: string;
+    stato: DPStatus;
+    revisione: number;
+    isLocked: boolean;
+    createdby: string;
+    created_at: string;
+    modifiedby: string;
+    modified_at: string;
 }
-
 interface CalendarDayData {
     date: Date;
     isCurrentMonth: boolean;
     isToday: boolean;
 }
-// #endregion
-
-// #region Helper Functions
 const getStatusColors = (status: DPStatus, theme: any): { main: string, background: string } => {
     const styles: { [key in DPStatus]?: { main: string, background: string } } = {
         'NUOVO': { main: theme.palette.info.dark, background: theme.palette.info.light },
@@ -51,15 +40,12 @@ const getStatusColors = (status: DPStatus, theme: any): { main: string, backgrou
     };
     return styles[status] || styles['APERTO']!;
 };
-
 const toLocalISOString = (date: Date) => {
     const year = date.getFullYear();
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const day = date.getDate().toString().padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
-
-
 const generateCalendarDays = (dateInMonth: Date): CalendarDayData[] => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -84,10 +70,10 @@ const generateCalendarDays = (dateInMonth: Date): CalendarDayData[] => {
         const date = new Date(year, month, i);
         days.push({ date, isCurrentMonth: true, isToday: date.getTime() === today.getTime() });
     }
-    
+
     const totalCells = 42;
-    let lastDate = days[days.length-1].date;
-    while(days.length < totalCells) {
+    let lastDate = days[days.length - 1].date;
+    while (days.length < totalCells) {
         lastDate = new Date(lastDate);
         lastDate.setDate(lastDate.getDate() + 1);
         days.push({ date: lastDate, isCurrentMonth: false, isToday: false });
@@ -104,32 +90,32 @@ const CalendarDay: React.FC<{
     onNavigate: (id: number) => void;
     onCreate: (date: string) => void;
     onToggleLock: (id: number, status: DPStatus) => void;
-    currentUserRole: UserInfo['role']['name'];
-}> = ({ day, planning, onNavigate, onCreate, onToggleLock, currentUserRole }) => {
+    // **[MODIFICA]** Passiamo la priorità invece del nome del ruolo
+    currentUserPriority: number;
+}> = ({ day, planning, onNavigate, onCreate, onToggleLock, currentUserPriority }) => {
     const theme = useTheme();
     const [isHovered, setIsHovered] = useState(false);
     const statusColor = planning ? getStatusColors(planning.stato, theme).main : 'transparent';
 
     const { isPast, isToday, isFutureFocusDay } = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const cellDate = new Date(day.date);
-    cellDate.setHours(0, 0, 0, 0);
-    const timeDiff = cellDate.getTime() - today.getTime();
-    const dayDiff = Math.round(timeDiff / (1000 * 3600 * 24));
-    return {
-        isPast: dayDiff < 0, // Changed to < 0 to exclude today from being "past"
-        isToday: dayDiff === 0,
-        isFutureFocusDay: dayDiff > 0 && dayDiff <= 3,
-    };
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const cellDate = new Date(day.date);
+        cellDate.setHours(0, 0, 0, 0);
+        const timeDiff = cellDate.getTime() - today.getTime();
+        const dayDiff = Math.round(timeDiff / (1000 * 3600 * 24));
+        return {
+            isPast: dayDiff < 0,
+            isToday: dayDiff === 0,
+            isFutureFocusDay: dayDiff > 0 && dayDiff <= 3,
+        };
     }, [day.date]);
 
     const todayStr = toLocalISOString(new Date());
-    const canUnlock = planning?.isLocked && currentUserRole === 'SPECIALIST' && planning.giorno > todayStr;
+    // **[MODIFICA]** Controllo basato sulla priorità
+    const canUnlock = planning?.isLocked && currentUserPriority <= 4 && planning.giorno > todayStr;
     const canBeClicked = day.isCurrentMonth && (planning || !isPast);
     const canBeClickedToAdd = day.isCurrentMonth && !isPast;
-    
-
 
     const handleClick = () => {
         if (planning) {
@@ -146,99 +132,83 @@ const CalendarDay: React.FC<{
         }
     }
 
-    
+    // Il resto del componente CalendarDay rimane invariato...
     return (
         <Box
             onClick={canBeClicked ? handleClick : undefined}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             sx={{
-                minHeight: { xs: 120, md: 140 },
-                p: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                position: 'relative',
-                transition: 'all 0.2s ease-in-out',
-                cursor: canBeClicked ? 'pointer' : 'default',
-                opacity: day.isCurrentMonth ? 1 : 0.4,
-                border: `1px solid ${theme.palette.divider}`,
-                borderTop: isFutureFocusDay ? `3px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}`,
-                backgroundColor: isFutureFocusDay
-                    ? alpha(theme.palette.primary.main, 0.08)
-                    : (day.isCurrentMonth ? 'background.paper' : alpha(theme.palette.grey[500], 0.05)),
-                '&:hover': canBeClicked
-                    ? {
-                        backgroundColor: isFutureFocusDay
-                            ? alpha(theme.palette.primary.main, 0.12)
-                            : alpha(theme.palette.primary.main, 0.04),
-                        ...(isFutureFocusDay && {
-                            borderTopColor: theme.palette.primary.dark,
-                        }),
-                        }
-                    : {},
+                minHeight: { xs: 120, md: 140 }, p: 1, display: 'flex', flexDirection: 'column', position: 'relative',
+                transition: 'all 0.2s ease-in-out', cursor: canBeClicked ? 'pointer' : 'default', opacity: day.isCurrentMonth ? 1 : 0.4,
+                border: `1px solid ${theme.palette.divider}`, borderTop: isFutureFocusDay ? `3px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}`,
+                backgroundColor: isFutureFocusDay ? alpha(theme.palette.primary.main, 0.08) : (day.isCurrentMonth ? 'background.paper' : alpha(theme.palette.grey[500], 0.05)),
+                '&:hover': canBeClicked ? {
+                    backgroundColor: isFutureFocusDay ? alpha(theme.palette.primary.main, 0.12) : alpha(theme.palette.primary.main, 0.04),
+                    ...(isFutureFocusDay && { borderTopColor: theme.palette.primary.dark, }),
+                } : {},
             }}
         >
             <Box display="flex" justifyContent="space-between" alignItems="center">
-           {planning && (
-             <Stack direction="row" alignItems="center" spacing={0.5}>
-               <Tooltip title={planning.isLocked ? (canUnlock ? "Clicca per sbloccare" : "Planning bloccato") : "Planning aperto"}>
-                   <span>
-                       <IconButton size="small" onClick={handleLockClick} disabled={planning.isLocked && !canUnlock} sx={{ p: 0.5, color: planning.isLocked ? 'text.secondary' : 'success.main' }}>
-                           {planning.isLocked ? <LockIcon sx={{fontSize: '1rem'}}/> : <LockOpenIcon sx={{fontSize: '1rem'}}/>}
-                       </IconButton>
-                   </span>
-               </Tooltip>
-               <Chip label={`Rev. ${planning.revisione ? planning.revisione>1 ? planning.revisione-1 :0 : 0}`} size="small" sx={{ fontSize: '0.65rem', height: '18px' }}/>
-             </Stack>
-           )}
-           <Box flexGrow={1} />
-           <Typography variant="body2" fontWeight={day.isToday ? 'bold' : 'normal'} color={day.isToday ? 'primary.main' : 'text.primary'} sx={{ backgroundColor: day.isToday ? alpha(theme.palette.primary.main, 0.1) : 'transparent', borderRadius: '50%', width: 24, height: 24, lineHeight: '24px', textAlign: 'center' }}>
-             {day.date.getDate()}
-           </Typography>
+                {planning && (
+                    <Stack direction="row" alignItems="center" spacing={0.5}>
+                        <Tooltip title={planning.isLocked ? (canUnlock ? "Clicca per sbloccare" : "Planning bloccato") : "Planning aperto"}>
+                            <span>
+                                <IconButton size="small" onClick={handleLockClick} disabled={planning.isLocked && !canUnlock} sx={{ p: 0.5, color: planning.isLocked ? 'text.secondary' : 'success.main' }}>
+                                    {planning.isLocked ? <LockIcon sx={{ fontSize: '1rem' }} /> : <LockOpenIcon sx={{ fontSize: '1rem' }} />}
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Chip label={`Rev. ${planning.revisione ? planning.revisione > 1 ? planning.revisione - 1 : 0 : 0}`} size="small" sx={{ fontSize: '0.65rem', height: '18px' }} />
+                    </Stack>
+                )}
+                <Box flexGrow={1} />
+                <Typography variant="body2" fontWeight={day.isToday ? 'bold' : 'normal'} color={day.isToday ? 'primary.main' : 'text.primary'} sx={{ backgroundColor: day.isToday ? alpha(theme.palette.primary.main, 0.1) : 'transparent', borderRadius: '50%', width: 24, height: 24, lineHeight: '24px', textAlign: 'center' }}>
+                    {day.date.getDate()}
+                </Typography>
             </Box>
-
             <Box flexGrow={1} display="flex" flexDirection="column" justifyContent="space-between" mt={0.5}>
                 {planning ? (
-                <>
-                  <Box flexGrow={1} display="flex" flexDirection="column" justifyContent="center" >
-                      <Stack direction="row" alignItems="center" spacing={1}>
-                          <FiberManualRecordIcon sx={{ fontSize: '0.8rem', color: statusColor }} />
-                          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: statusColor }}>
-                              {planning.stato}
-                          </Typography>
-                      </Stack>
-                      {canBeClicked && (
-                      <Fade in={isHovered}>
-                          <Button size="small" variant="text" endIcon={<ArrowForwardIcon />} onClick={handleClick} sx={{ alignSelf: 'flex-start', mt: 1, p: 0, textTransform: 'none' }}>
-                              Gestisci
-                          </Button>
-                      </Fade>
-                        )}
-                  </Box>
-                  <Stack spacing={0.5} sx={{ width: '100%' }}>
-                      <Tooltip title={`Creato il: ${new Date(planning.created_at).toLocaleString('it-IT')}`}>
-                          <Stack direction="row" alignItems="center" spacing={0.5}>
-                              <CreateIcon sx={{ fontSize: '0.8rem', color: 'text.secondary' }} />
-                              <Typography variant="caption" color="text.secondary" noWrap>
-                                  {planning.createdby}
-                              </Typography>
-                          </Stack>
-                      </Tooltip>
-                       <Tooltip title={`Modificato il: ${new Date(planning.modified_at).toLocaleString('it-IT')}`}>
-                          <Stack direction="row" alignItems="center" spacing={0.5}>
-                              <EditIcon sx={{ fontSize: '0.8rem', color: 'text.secondary' }} />
-                              <Typography variant="caption" color="text.secondary" noWrap>
-                                  {planning.modifiedby}
-                              </Typography>
-                          </Stack>
-                      </Tooltip>
-                  </Stack>
-                </>
+                    <>
+                        <Box flexGrow={1} display="flex" flexDirection="column" justifyContent="center" >
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                                <FiberManualRecordIcon sx={{ fontSize: '0.8rem', color: statusColor }} />
+                                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: statusColor }}>
+                                    {planning.stato}
+                                </Typography>
+                            </Stack>
+                            {canBeClicked && (
+                                <Fade in={isHovered}>
+                                    <Button size="small" variant="text" endIcon={<ArrowForwardIcon />} onClick={handleClick} sx={{ alignSelf: 'flex-start', mt: 1, p: 0, textTransform: 'none' }}>
+                                        Gestisci
+                                    </Button>
+                                </Fade>
+                            )}
+                        </Box>
+                        <Stack spacing={0.5} sx={{ width: '100%' }}>
+                            <Tooltip title={`Creato il: ${new Date(planning.created_at).toLocaleString('it-IT')}`}>
+                                <Stack direction="row" alignItems="center" spacing={0.5}>
+                                    <CreateIcon sx={{ fontSize: '0.8rem', color: 'text.secondary' }} />
+                                    <Typography variant="caption" color="text.secondary" noWrap>
+                                        {planning.createdby}
+                                    </Typography>
+                                </Stack>
+                            </Tooltip>
+                            <Tooltip title={`Modificato il: ${new Date(planning.modified_at).toLocaleString('it-IT')}`}>
+                                <Stack direction="row" alignItems="center" spacing={0.5}>
+                                    <EditIcon sx={{ fontSize: '0.8rem', color: 'text.secondary' }} />
+                                    <Typography variant="caption" color="text.secondary" noWrap>
+                                        {planning.modifiedby}
+                                    </Typography>
+                                </Stack>
+                            </Tooltip>
+                        </Stack>
+                    </>
                 ) : day.isCurrentMonth && !isPast && (
                     <Box sx={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'text.disabled', '&:hover .add-icon': { transform: 'scale(1.2)', opacity: 1, color: 'primary.main' } }}>
-                        <AddIcon className="add-icon" sx={{ opacity: 0.2, transition: 'all 0.2s ease-in-out' }}/>
+                        <AddIcon className="add-icon" sx={{ opacity: 0.2, transition: 'all 0.2s ease-in-out' }} />
                     </Box>
-                ) }
+                )}
             </Box>
         </Box>
     );
@@ -248,21 +218,20 @@ const CalendarDay: React.FC<{
 const DailyPlanningPage: React.FC = () => {
     const theme = useTheme();
     const { user } = useAuth();
-    const currentUserRole = user?.role?.name ?? '';
+    // **[MODIFICA]** Otteniamo la priorità per i controlli
+    const currentUserPriority = user?.role?.priority ?? 99; // Default a un valore alto per sicurezza
     const { getAllDPTesta, updateDPTesta } = useDailyPlanningApi();
 
     const [displayDate, setDisplayDate] = useState(new Date());
     const [planningsMap, setPlanningsMap] = useState<Map<string, DailyPlanningSummary>>(new Map());
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    
-    // --- State for the sidebar ---
+
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [refreshKey, setRefreshKey] = useState(0);
 
-    // Ref to access the form component's methods
     const formRef = useRef<DailyPlanningFormRef>(null);
 
     const calendarDays = useMemo(() => generateCalendarDays(displayDate), [displayDate]);
@@ -277,15 +246,10 @@ const DailyPlanningPage: React.FC = () => {
                 const newMap = new Map<string, DailyPlanningSummary>();
                 fetchedData.forEach((dp: DPTesta) => {
                     const summary: DailyPlanningSummary = {
-                        id: dp.id,
-                        giorno: dp.giorno,
-                        stato: dp.stato,
-                        revisione: dp.revisione,
+                        id: dp.id, giorno: dp.giorno, stato: dp.stato, revisione: dp.revisione,
                         isLocked: dp.stato === 'CHIUSO' || dp.stato === 'MODIFICATO',
-                        createdby: dp.createdby,
-                        created_at: dp.created,
-                        modifiedby: dp.modifiedby,
-                        modified_at: dp.modified,
+                        createdby: dp.createdby, created_at: dp.created,
+                        modifiedby: dp.modifiedby, modified_at: dp.modified,
                     };
                     const dateKey = toLocalISOString(new Date(dp.giorno));
                     newMap.set(dateKey, summary);
@@ -299,7 +263,7 @@ const DailyPlanningPage: React.FC = () => {
             }
         };
         fetchPlannings();
-    }, [getAllDPTesta, displayDate, refreshKey]);
+    }, [displayDate, refreshKey]);
 
     // #region Handlers
     const handleOpenPlanning = useCallback((id: number) => {
@@ -313,34 +277,29 @@ const DailyPlanningPage: React.FC = () => {
         setSelectedDate(date);
         setIsSidebarOpen(true);
     }, []);
-    
-    // MODIFIED: This function is now only called when the form confirms it's ok to close.
+
     const handleConfirmAndClear = useCallback(() => {
         setIsSidebarOpen(false);
-        // Delay clearing state to allow for the closing animation
         setTimeout(() => {
             setSelectedPlanningId(null);
             setSelectedDate(null);
-        }, 300); 
-        // Refresh the calendar view
-        setRefreshKey(k => k + 1); 
+        }, 300);
+        setRefreshKey(k => k + 1);
     }, []);
 
-    // NEW: This function initiates the close request. It's called by the Drawer and close button.
     const handleRequestClose = useCallback(() => {
         if (formRef.current) {
-            // Delegate the close decision to the form component
             formRef.current.handleCloseRequest();
         } else {
-            // Fallback if the form isn't mounted for some reason
             handleConfirmAndClear();
         }
     }, [handleConfirmAndClear]);
 
     const handleToggleLock = useCallback(async (dpId: number, currentStatus: DPStatus) => {
         if (currentStatus !== 'CHIUSO' && currentStatus !== 'MODIFICATO') return;
-        if (currentUserRole !== 'SPECIALIST') {
-            alert("Solo gli Specialisti possono sbloccare un planning.");
+        // **[MODIFICA]** Controllo basato sulla priorità
+        if (currentUserPriority > 4) {
+            alert("Solo gli utenti con priorità adeguata possono sbloccare un planning.");
             return;
         }
         try {
@@ -349,7 +308,7 @@ const DailyPlanningPage: React.FC = () => {
         } catch (err: any) {
             alert(`Errore durante lo sblocco del planning: ${err.message}`);
         }
-    }, [currentUserRole, updateDPTesta, user]);
+    }, [currentUserPriority, updateDPTesta, user]);
 
     const changeMonth = (offset: number) => {
         setDisplayDate(current => {
@@ -361,6 +320,7 @@ const DailyPlanningPage: React.FC = () => {
     };
     // #endregion
 
+    // Il resto del componente DailyPlanningPage rimane invariato...
     return (
         <>
             <Box sx={{ bgcolor: theme.palette.grey[100], minHeight: '100vh' }}>
@@ -383,11 +343,11 @@ const DailyPlanningPage: React.FC = () => {
                     </Container>
                 </AppBar>
 
-                <Container maxWidth="xl" sx={{ py: 4, px: {xs: 1, sm: 2, md: 3} }}>
+                <Container maxWidth="xl" sx={{ py: 4, px: { xs: 1, sm: 2, md: 3 } }}>
                     <Paper elevation={0} sx={{ borderRadius: 2, overflow: 'hidden', border: `1px solid ${theme.palette.divider}` }}>
                         <Box sx={{ display: { xs: 'none', md: 'grid' }, gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${theme.palette.divider}`, bgcolor: alpha(theme.palette.grey[500], 0.04) }}>
                             {weekDays.map(day => (
-                                <Box key={day} sx={{ textAlign: 'center', p: 1, borderRight: `1px solid ${theme.palette.divider}`,'&:last-child': { borderRight: 'none' } }}>
+                                <Box key={day} sx={{ textAlign: 'center', p: 1, borderRight: `1px solid ${theme.palette.divider}`, '&:last-child': { borderRight: 'none' } }}>
                                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>{day}</Typography>
                                 </Box>
                             ))}
@@ -395,7 +355,7 @@ const DailyPlanningPage: React.FC = () => {
                         {isLoading ? (
                             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
                                 {[...Array(42)].map((_, i) => (
-                                    <Skeleton key={i} variant="rectangular" height={140} sx={{ borderRight: `1px solid ${theme.palette.divider}`, borderBottom: `1px solid ${theme.palette.divider}`}}/>
+                                    <Skeleton key={i} variant="rectangular" height={140} sx={{ borderRight: `1px solid ${theme.palette.divider}`, borderBottom: `1px solid ${theme.palette.divider}` }} />
                                 ))}
                             </Box>
                         ) : error ? (
@@ -413,7 +373,8 @@ const DailyPlanningPage: React.FC = () => {
                                             onNavigate={handleOpenPlanning}
                                             onCreate={handleCreateNewDP}
                                             onToggleLock={handleToggleLock}
-                                            currentUserRole={currentUserRole}
+                                            // **[MODIFICA]** Passiamo la priorità
+                                            currentUserPriority={currentUserPriority}
                                         />
                                     );
                                 })}
@@ -423,44 +384,35 @@ const DailyPlanningPage: React.FC = () => {
                 </Container>
             </Box>
 
-            {/* --- Drawer for DailyPlanningForm --- */}
             <Drawer
                 anchor="right"
                 open={isSidebarOpen}
-                // MODIFIED: Use the new request handler here
                 onClose={handleRequestClose}
                 PaperProps={{
                     sx: {
                         width: { xs: '100vw', sm: '90vw', md: '75vw', lg: '65vw' },
                         maxWidth: { lg: 1100 },
-                        boxShadow: -5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        bgcolor: 'background.default'
+                        boxShadow: -5, display: 'flex', flexDirection: 'column', bgcolor: 'background.default'
                     }
                 }}
             >
-                <AppBar position="sticky" elevation={0} sx={{boxShadow: 'none', borderBottom: 1, borderColor: 'divider'}}>
-                     <Toolbar sx={{ justifyContent: 'space-between' }}>
-                         <Typography variant="h6" component="h2" fontWeight="bold">
-                             {selectedPlanningId ? 'Modifica Planning' : 'Nuovo Planning'}
-                         </Typography>
-                         {/* MODIFIED: Use the new request handler here */}
-                         <IconButton onClick={handleRequestClose} edge="end">
-                             <CloseIcon />
-                         </IconButton>
-                     </Toolbar>
+                <AppBar position="sticky" elevation={0} sx={{ boxShadow: 'none', borderBottom: 1, borderColor: 'divider' }}>
+                    <Toolbar sx={{ justifyContent: 'space-between' }}>
+                        <Typography variant="h6" component="h2" fontWeight="bold">
+                            {selectedPlanningId ? 'Modifica Planning' : 'Nuovo Planning'}
+                        </Typography>
+                        <IconButton onClick={handleRequestClose} edge="end">
+                            <CloseIcon />
+                        </IconButton>
+                    </Toolbar>
                 </AppBar>
-
                 <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
                     {isSidebarOpen && (
                         <DailyPlanningForm
-                            // NEW: Pass the ref to the child component
                             ref={formRef}
                             key={selectedPlanningId || selectedDate}
                             planningId={selectedPlanningId}
                             targetDate={selectedDate}
-                            // MODIFIED: Pass the confirmation handler to the form
                             onClose={handleConfirmAndClear}
                             title={'Daily Planning'}
                         />
@@ -471,4 +423,4 @@ const DailyPlanningPage: React.FC = () => {
     );
 };
 
-export default DailyPlanningPage;
+export default DailyPlanningPage;   

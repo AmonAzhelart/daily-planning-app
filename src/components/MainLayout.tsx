@@ -8,8 +8,8 @@ import {
 import EventNoteIcon from '@mui/icons-material/EventNote';
 import LogoutIcon from '@mui/icons-material/Logout';
 import InsertChartIcon from '@mui/icons-material/InsertChart';
-import MenuIcon from '@mui/icons-material/Menu'; // <-- Icona per il menu mobile
-import HomeIcon from '@mui/icons-material/Home'; // Usiamo l'icona di MUI
+import MenuIcon from '@mui/icons-material/Menu';
+import HomeIcon from '@mui/icons-material/Home';
 import { createTheme } from '@mui/material/styles';
 import { useAuth } from '../context/AuthContenxt';
 import { useDailyPlanningApi } from '../customHook/api';
@@ -35,14 +35,13 @@ const epicTheme = createTheme({
   components: { MuiPaper: { defaultProps: { elevation: 1 }, styleOverrides: { root: { transition: 'box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', border: `1px solid ${alpha(paletteOptions.common.black, 0.08)}` } } }, MuiButton: { styleOverrides: { root: { padding: '8px 20px', borderRadius: 6 }, containedPrimary: { '&:hover': { backgroundColor: paletteOptions.primary.dark } } } }, MuiChip: { styleOverrides: { root: { fontWeight: 500, padding: '4px 8px', height: 'auto', fontSize: '0.8rem' } } }, MuiAppBar: { defaultProps: { elevation: 0, color: 'inherit' }, styleOverrides: { root: { backgroundColor: paletteOptions.background.paper, borderBottom: `1px solid ${alpha(paletteOptions.common.black, 0.12)}` } } }, MuiTableCell: { styleOverrides: { head: { fontWeight: 600, color: alpha(paletteOptions.text.primary, 0.75), backgroundColor: alpha(paletteOptions.primary.main, 0.04), borderBottom: `1px solid ${alpha(paletteOptions.primary.main, 0.15)}`, padding: '12px 16px', }, body: { color: alpha(paletteOptions.text.primary, 0.9), padding: '10px 16px', borderBottom: `1px solid ${alpha(paletteOptions.common.black, 0.07)}`, } } }, MuiTableRow: { styleOverrides: { root: { transition: 'background-color 0.2s ease-in-out', '&.Mui-selected, &.Mui-selected:hover': { backgroundColor: alpha(paletteOptions.primary.main, 0.06), }, '&:last-child td, &:last-child th': { borderBottom: 0, } } } }, MuiTableContainer: { styleOverrides: { root: { borderRadius: 8, border: `1px solid ${alpha(paletteOptions.common.black, 0.1)}` } } }, MuiTooltip: { styleOverrides: { tooltip: { backgroundColor: alpha(paletteOptions.common.black, 0.87), fontSize: '0.78rem', padding: '6px 10px', } } }, MuiFab: { styleOverrides: { root: { boxShadow: '0px 4px 12px rgba(0,0,0,0.15)', '&:hover': { boxShadow: '0px 6px 16px rgba(0,0,0,0.2)', } } } }, MuiTextField: { defaultProps: { size: 'small', } }, MuiSelect: { defaultProps: { size: 'small', } }, MuiAutocomplete: { defaultProps: { size: 'small', } }, MuiToggleButtonGroup: { defaultProps: { size: 'small', exclusive: true, }, styleOverrides: { root: { border: `1px solid ${alpha(paletteOptions.common.black, 0.15)}`, borderRadius: 6, }, } }, MuiToggleButton: { styleOverrides: { root: { padding: '5px 12px', textTransform: 'none', fontWeight: 500, color: alpha(paletteOptions.text.primary, 0.7), '&.Mui-selected': { color: paletteOptions.primary.main, backgroundColor: alpha(paletteOptions.primary.main, 0.12), '&:hover': { backgroundColor: alpha(paletteOptions.primary.main, 0.2), } }, border: 'none', '&:not(:first-of-type)': { marginLeft: 0, borderLeft: `1px solid ${alpha(paletteOptions.common.black, 0.15)}`, }, } } }, MuiSwitch: { styleOverrides: { root: { width: 42, height: 26, padding: 0, '& .MuiSwitch-switchBase': { padding: 0, margin: 2, transitionDuration: '300ms', '&.Mui-checked': { transform: 'translateX(16px)', color: paletteOptions.common.white, '& + .MuiSwitch-track': { backgroundColor: paletteOptions.success.main, opacity: 1, border: 0, }, '& .MuiSwitch-thumb': { boxSizing: 'border-box', width: 22, height: 22, }, '& .MuiSvgIcon-root': { display: 'block', fontSize: '0.9rem', }, }, '&.Mui-disabled + .MuiSwitch-track': { opacity: 0.5, }, }, '& .MuiSwitch-thumb': { boxSizing: 'border-box', width: 22, height: 22, boxShadow: '0 1px 2px rgba(0,0,0,0.2)', }, '& .MuiSwitch-track': { borderRadius: 26 / 2, backgroundColor: alpha(paletteOptions.common.black, 0.25), opacity: 1, transition: createTheme().transitions.create(['background-color'], { duration: 500, }), }, '& .MuiSwitch-switchBase .MuiSvgIcon-root': { display: 'none', }, }, } } },
 });
 
+
 const MainLayout: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const api = useDailyPlanningApi();
-
-  // Stato per gestire l'apertura/chiusura del drawer mobile
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleDrawerToggle = () => {
@@ -67,11 +66,19 @@ const MainLayout: React.FC = () => {
     }
   };
 
+  // Array di base per la navigazione
   const navItems = [
     { text: 'Daily Planning', icon: <EventNoteIcon />, path: '/daily-planning' },
-    { text: 'Gestione', icon: <EventNoteIcon />, path: '/management' },
-    { text: 'Statistiche', icon: <InsertChartIcon />, path: '/statistics' }
   ];
+
+  // **[CORREZIONE]** Aggiunge le voci solo se l'utente ha la priorità corretta.
+  // Utilizza user.priority invece di user.role.priority
+  if (user && user.role.priority <= 2) {
+    navItems.push(
+      { text: 'Gestione', icon: <EventNoteIcon />, path: '/management' },
+      { text: 'Statistiche', icon: <InsertChartIcon />, path: '/statistics' }
+    );
+  }
 
   const activeLinkStyle = {
     backgroundColor: alpha(theme.palette.primary.main, 0.1),
@@ -79,7 +86,7 @@ const MainLayout: React.FC = () => {
     fontWeight: 'bold',
   };
 
-  // Contenuto del Drawer per la navigazione mobile
+  // Il resto del componente rimane invariato...
   const drawerContent = (
     <Box onClick={handleDrawerToggle} sx={{ textAlign: 'center' }}>
       <Typography variant="h6" sx={{ my: 2, fontWeight: 'bold' }}>
@@ -103,6 +110,7 @@ const MainLayout: React.FC = () => {
             {user.first_name} {user.last_name}
           </Typography>
           <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'capitalize' }}>
+            {/* Assumo che user.role.name esista ancora */}
             {user.role.name.toLowerCase()}
           </Typography>
           <Button
@@ -126,7 +134,6 @@ const MainLayout: React.FC = () => {
         <AppBar position="static">
           <Container maxWidth="xl">
             <Toolbar disableGutters>
-              {/* --- Icona Hamburger (solo mobile) --- */}
               {isMobile && (
                 <IconButton
                   color="inherit"
@@ -138,8 +145,6 @@ const MainLayout: React.FC = () => {
                   <MenuIcon />
                 </IconButton>
               )}
-
-              {/* --- Pulsante Home e Titolo --- */}
               <IconButton
                 color="primary"
                 onClick={goToHome}
@@ -150,9 +155,6 @@ const MainLayout: React.FC = () => {
               <Typography variant="h6" noWrap component="div" sx={{ ml: 2, mr: 3, fontWeight: 700 }}>
                 Mt Ortho
               </Typography>
-
-
-              {/* --- Navigazione Desktop --- */}
               {!isMobile && (
                 <Box sx={{ flexGrow: 1, display: 'flex', gap: 1 }}>
                   {navItems.map((item) => (
@@ -168,10 +170,7 @@ const MainLayout: React.FC = () => {
                   ))}
                 </Box>
               )}
-              {/* Spazio per spingere a destra l'utente */}
               {!isMobile && <Box sx={{ flexGrow: 1 }} />}
-
-              {/* --- Info Utente (solo desktop) --- */}
               {!isMobile && user && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <Box sx={{ textAlign: 'right' }}>
@@ -190,13 +189,11 @@ const MainLayout: React.FC = () => {
             </Toolbar>
           </Container>
         </AppBar>
-
-        {/* --- Drawer per Navigazione Mobile --- */}
         <Drawer
           variant="temporary"
           open={mobileOpen}
           onClose={handleDrawerToggle}
-          ModalProps={{ keepMounted: true }} // Migliora le performance su mobile
+          ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: 'block', md: 'none' },
             '& .MuiDrawer-paper': { boxSizing: 'border-box', width: 280 },
@@ -204,8 +201,6 @@ const MainLayout: React.FC = () => {
         >
           {drawerContent}
         </Drawer>
-
-        {/* --- Contenuto Principale della Pagina --- */}
         <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 3 }, backgroundColor: 'background.default', overflow: 'auto' }}>
           <Outlet />
         </Box>
